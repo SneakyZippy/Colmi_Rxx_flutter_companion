@@ -51,15 +51,22 @@ class HistoryScreen extends StatelessWidget {
       );
     }
 
-    // Create spots
+    // Sort and calculate cumulative steps
+    List<Point> sortedSteps = List.from(ble.stepsHistory);
+    sortedSteps.sort((a, b) => a.x.compareTo(b.x));
+
     List<BarChartGroupData> barGroups = [];
-    for (int i = 0; i < ble.stepsHistory.length; i++) {
-      final point = ble.stepsHistory[i];
+    int runningTotal = 0;
+
+    for (int i = 0; i < sortedSteps.length; i++) {
+      final point = sortedSteps[i];
+      runningTotal += point.y;
+
       barGroups.add(
         BarChartGroupData(
           x: point.x,
           barRods: [
-            BarChartRodData(toY: point.y.toDouble(), color: Colors.blue),
+            BarChartRodData(toY: runningTotal.toDouble(), color: Colors.blue),
           ],
         ),
       );
@@ -76,6 +83,28 @@ class HistoryScreen extends StatelessWidget {
           Expanded(
             child: BarChart(
               BarChartData(
+                barTouchData: BarTouchData(
+                  enabled: true,
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      int index = group.x.toInt();
+                      int totalMinutes = index * 15;
+                      int h = totalMinutes ~/ 60;
+                      int m = totalMinutes % 60;
+                      String timeStr =
+                          "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+
+                      return BarTooltipItem(
+                        '$timeStr\n${rod.toY.toInt()} steps',
+                        const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 barGroups: barGroups,
                 titlesData: FlTitlesData(
                   rightTitles: const AxisTitles(
@@ -87,9 +116,8 @@ class HistoryScreen extends StatelessWidget {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 5,
+                      interval: 10,
                       getTitlesWidget: (value, meta) {
-                        // Heuristic: Assuming Steps Index represents 15-minute slots?
                         int index = value.toInt();
                         int totalMinutes = index * 15;
 

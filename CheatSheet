@@ -1,0 +1,5 @@
+Start new work	    git checkout -b my-new-feature
+Save work	        git add .               then        git commit -m "message"
+Upload work	        git push -u origin my-new-feature
+Go back to start	git checkout main
+Update computer	    git pull
