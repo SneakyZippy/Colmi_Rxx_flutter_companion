@@ -90,15 +90,12 @@ class HistoryScreen extends StatelessWidget {
                       interval: 5,
                       getTitlesWidget: (value, meta) {
                         // Heuristic: Assuming Steps Index represents 15-minute slots?
-                        // If user sees 68, likely range is 0-96 (~24h / 15m)
                         int index = value.toInt();
-                        int totalMinutes =
-                            index * 15; // Trying 15 minute interval
+                        int totalMinutes = index * 15;
 
                         int h = totalMinutes ~/ 60;
                         int m = totalMinutes % 60;
 
-                        // Limit to 24h just in case
                         if (h >= 24) h = h % 24;
 
                         String text =
@@ -143,16 +140,49 @@ class HistoryScreen extends StatelessWidget {
       );
     }
 
-    // Create spots
+    // Create spots from Point (MinutesFromMidnight, Value)
     List<FlSpot> spots = [];
     for (int i = 0; i < ble.hrHistory.length; i++) {
-      spots.add(FlSpot(i.toDouble(), ble.hrHistory[i].toDouble()));
+      final point = ble.hrHistory[i];
+      spots.add(FlSpot(point.x.toDouble(), point.y.toDouble()));
     }
+
+    // Sort spots by X (Time) just in case
+    spots.sort((a, b) => a.x.compareTo(b.x));
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: LineChart(
         LineChartData(
+          lineTouchData: LineTouchData(
+            enabled: true,
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((LineBarSpot touchedSpot) {
+                  final textStyle = TextStyle(
+                    color:
+                        touchedSpot.bar.gradient?.colors.first ??
+                        touchedSpot.bar.color ??
+                        Colors.blueGrey,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  );
+
+                  // Convert X (Minutes) back to Time
+                  int totalMinutes = touchedSpot.x.toInt();
+                  int h = totalMinutes ~/ 60;
+                  int m = totalMinutes % 60;
+                  String timeStr =
+                      "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+
+                  return LineTooltipItem(
+                    '$timeStr\n${touchedSpot.y.toInt()} bpm',
+                    textStyle,
+                  );
+                }).toList();
+              },
+            ),
+          ),
           lineBarsData: [
             LineChartBarData(
               spots: spots,
@@ -175,14 +205,14 @@ class HistoryScreen extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: 12, // Show label every 1 hour (12 * 5min = 60min)
+                interval: 240, // Show labels every 4 hours (240 min)
                 getTitlesWidget: (value, meta) {
-                  int index = value.toInt();
-                  if (index < 0 || index >= 288) return const Text('');
+                  int minutesFromMidnight = value.toInt();
+                  if (minutesFromMidnight < 0 || minutesFromMidnight >= 1440)
+                    return const Text('');
 
-                  int totalMinutes = index * 5;
-                  int h = totalMinutes ~/ 60;
-                  int m = totalMinutes % 60;
+                  int h = minutesFromMidnight ~/ 60;
+                  int m = minutesFromMidnight % 60;
                   String text =
                       "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
                   return Padding(
@@ -193,6 +223,10 @@ class HistoryScreen extends StatelessWidget {
               ),
             ),
           ),
+          minX: 0,
+          maxX: 1440, // 24 Hours
+          minY: 0,
+          maxY: 200, // Reasonable max HR
         ),
       ),
     );

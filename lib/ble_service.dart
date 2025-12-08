@@ -215,6 +215,15 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  bool _isMeasuringHeartRate = false;
+  bool get isMeasuringHeartRate => _isMeasuringHeartRate;
+  Timer? _hrTimer;
+
+  // HR History Parser State
+  int _hrLogInterval = 5; // Default 5 mins
+  int _hrLogBaseTime = 0; // Unix Timestamp
+  int _hrLogCount = 0;
+
   void _onDataReceived(List<int> data) {
     if (data.isEmpty) return;
 
@@ -223,27 +232,10 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     // Parse data
-    // Example: Heart Rate is usually in a specific packet.
-    // If we sent 0x69, we expect a response.
-    // Often 0x69 response: Header (0xA1?) + 0x69 + HR_Value + ...
-
-    // Simple heuristic for HR for now:
-    // If the packet corresponds to HR measurement.
-    // Let's interpret user requirement: "Real-time Heart Rate value (updates via Notify stream)"
-    // We assume the device sends packets. We need to identify them.
-    // For now, let's look for the command 0x69 or similar in the response.
-    // Or if it's a standard HR service (0x180D), but this uses a custom protocol.
-
-    // Warning: without the exact response protocol, this is a guess.
-    // I'll assume byte 1 is the command echo?
-    // If we sent 0x69, we expect a response.
-    // Response has Command at byte 0.
     if (data.length > 1) {
       int cmd = data[0];
       int dataOffset = 1;
 
-      // Heuristic: If index 0 is 0xA1 (Header), look at index 1 for command
-      // This handles cases where response includes header but request does not.
       if (cmd == 0xA1 && data.length > 2) {
         cmd = data[1];
         dataOffset = 2;
@@ -251,44 +243,30 @@ class BleService extends ChangeNotifier {
 
       // Live Heart Rate (0x69)
       if (cmd == PacketFactory.CMD_HEART_RATE_MEASUREMENT) {
-        // Debug Log showed: 69 00 00 00 00 00 6c 03 ...
-        // Index 6 seems to be the value.
-        // Corrected Request [1, 1] -> Expect value at index 3
         int valueIndex = 3 + (dataOffset - 1);
-
         if (data.length > valueIndex) {
           _heartRate = data[valueIndex];
           notifyListeners();
+
+          if (_isMeasuringHeartRate) {
+            debugPrint("HR Received - Scheduling next in 1s");
+            _hrTimer?.cancel();
+            _hrTimer = Timer(const Duration(seconds: 1), _triggerHrMeasurement);
+          }
         }
       }
 
       // Steps History (0x43)
       if (cmd == PacketFactory.CMD_GET_STEPS) {
-        // Protocol based on colmi_r02_client SportDetailParser
-        // Packet[1] might be sub-type or year BCD?
-        // Header: packet[1] == 0xF0 (240)
-
         if (data.length < 13) return;
-
         int byte1 = data[dataOffset];
         if (byte1 == 0xF0) {
-          // Header / Start
-          debugPrint("Steps Log Start: Packet[3]=${data[dataOffset + 2]}");
+          debugPrint("Steps Log Start");
           _stepsHistory.clear();
-          // Optional: Reset total steps if we are summing them up
         } else if (byte1 != 0xFF) {
-          // 0xFF is error
-          // Data Packet
-          // byte1 = Year BCD (ignored)
-          // byte2 = Month BCD
-          // byte3 = Day BCD
-          int timeIndex = data[dataOffset + 3]; // Index 4 in raw packet
-
-          // Steps at index 9, 10 (relative to 0) -> DataOffset + 8, +9
+          int timeIndex = data[dataOffset + 3];
           int stepsVal = data[dataOffset + 8] | (data[dataOffset + 9] << 8);
-
           if (stepsVal > 0) {
-            // Store in map or list
             _stepsHistory.add(Point(timeIndex, stepsVal));
             notifyListeners();
           }
@@ -297,8 +275,6 @@ class BleService extends ChangeNotifier {
 
       // Battery Level (0x03)
       if (cmd == PacketFactory.CMD_GET_BATTERY) {
-        // Assuming Battery Level is at index 1 (standard) or index 2 (if header)
-        // Payload usually: [Level] ...
         int levelIndex = 1 + (dataOffset - 1);
         if (data.length > levelIndex) {
           _batteryLevel = data[levelIndex];
@@ -306,32 +282,50 @@ class BleService extends ChangeNotifier {
         }
       }
 
-      // Heart Rate Log (0x15)
+      // Heart Rate Log (0x15) - UPDATED with Timestamp Logic
       if (cmd == PacketFactory.CMD_GET_HEART_RATE_LOG) {
         if (data.length < 2) return;
         int subType = data[dataOffset];
 
         if (subType == 0) {
-          // Start Packet: Reset history
-          debugPrint(
-            "HR Log Start: Size=${data[dataOffset + 1]}, Interval=${data[dataOffset + 2]}",
-          );
+          // Start Packet
+          // interval at offset+2
+          if (data.length > dataOffset + 2) {
+            int interval = data[dataOffset + 2];
+            if (interval > 0) _hrLogInterval = interval;
+          }
+          debugPrint("HR Log Start: Interval=$_hrLogInterval");
           _hrHistory.clear();
         } else if (subType == 1) {
-          // Timestamp Packet (Contains data too)
-          int startData = dataOffset + 5;
-          for (
-            int i = startData;
-            i < data.length - 1 && i < startData + 9;
-            i++
-          ) {
-            int val = data[i];
-            if (val != 0 && val != 255) {
-              _hrHistory.add(val);
+          // Timestamp Packet
+          // Timestamp at dataOffset+1 (4 bytes LE)
+          if (data.length >= dataOffset + 5) {
+            int t0 = data[dataOffset + 1];
+            int t1 = data[dataOffset + 2];
+            int t2 = data[dataOffset + 3];
+            int t3 = data[dataOffset + 4];
+            _hrLogBaseTime = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24);
+            _hrLogCount = 0; // Reset point counter for this block
+
+            debugPrint("HR Log TimeBlock: $_hrLogBaseTime");
+
+            // Data starts at dataOffset + 5
+            int startData = dataOffset + 5;
+            for (
+              int i = startData;
+              i < data.length - 1 && i < startData + 9;
+              i++
+            ) {
+              int val = data[i];
+              if (val != 0 && val != 255) {
+                _addHrPoint(val);
+              }
+              _hrLogCount++;
             }
           }
         } else {
-          // Data Packet
+          // Data Packet (Continues from previous time block)
+          // Data starts at dataOffset + 1
           int startData = dataOffset + 1;
           for (
             int i = startData;
@@ -340,8 +334,9 @@ class BleService extends ChangeNotifier {
           ) {
             int val = data[i];
             if (val != 0 && val != 255) {
-              _hrHistory.add(val);
+              _addHrPoint(val);
             }
+            _hrLogCount++;
           }
           notifyListeners();
         }
@@ -349,48 +344,53 @@ class BleService extends ChangeNotifier {
     }
   }
 
-  bool _isMeasuringHeartRate = false;
-  bool get isMeasuringHeartRate => _isMeasuringHeartRate;
-  Timer? _hrMeasurementTimer;
+  void _addHrPoint(int hrValue) {
+    if (_hrLogBaseTime == 0) return;
+
+    // Calculate time for this point in Minutes From Midnight
+    // Time = Base + (Count * Interval * 60)
+    int pointTimeSeconds = _hrLogBaseTime + (_hrLogCount * _hrLogInterval * 60);
+    DateTime dt = DateTime.fromMillisecondsSinceEpoch(pointTimeSeconds * 1000);
+
+    int minutesFromMidnight = dt.hour * 60 + dt.minute;
+
+    // Avoid duplicate X values if possible, or just add
+    // List<Point> allows duplicates, Graph will plot them
+    _hrHistory.add(Point(minutesFromMidnight, hrValue));
+  }
 
   Future<void> startHeartRate() async {
     if (_writeChar == null) return;
 
     _isMeasuringHeartRate = true;
     notifyListeners();
+    _triggerHrMeasurement();
+  }
 
-    // Function to send the start command
-    Future<void> sendStartCmd() async {
-      try {
-        if (!_isMeasuringHeartRate) return;
-        List<int> packet = PacketFactory.startHeartRate();
-        await _writeChar!.write(packet);
-        debugPrint("Sent Heartbeat Start HR Command");
-      } catch (e) {
-        debugPrint("Error sending start HR: $e");
-        _isMeasuringHeartRate = false;
-        _hrMeasurementTimer?.cancel();
-        notifyListeners();
-      }
+  void _triggerHrMeasurement() async {
+    if (!_isMeasuringHeartRate || _writeChar == null) return;
+
+    try {
+      List<int> packet = PacketFactory.startHeartRate();
+      await _writeChar!.write(packet);
+      debugPrint("Sent Single HR Request");
+
+      _hrTimer?.cancel();
+      _hrTimer = Timer(const Duration(seconds: 15), () {
+        debugPrint("HR Watchdog Timeout - Retrying...");
+        _triggerHrMeasurement();
+      });
+    } catch (e) {
+      debugPrint("Error triggering HR: $e");
+      _hrTimer = Timer(const Duration(seconds: 5), _triggerHrMeasurement);
     }
-
-    // Send immediately
-    await sendStartCmd();
-
-    // Schedule periodic resend every 2 seconds (aggressive) or 5-10s
-    // If the ring stops automatically after a few seconds, we need to restart it.
-    // Let's try every 2 seconds to keep it "live".
-    _hrMeasurementTimer?.cancel();
-    _hrMeasurementTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      sendStartCmd();
-    });
   }
 
   Future<void> stopHeartRate() async {
     if (_writeChar == null) return;
 
     _isMeasuringHeartRate = false;
-    _hrMeasurementTimer?.cancel(); // Stop the loop
+    _hrTimer?.cancel();
     notifyListeners();
 
     try {
@@ -409,11 +409,6 @@ class BleService extends ChangeNotifier {
     if (_writeChar == null) return;
 
     final now = DateTime.now();
-    // Protocol based on colmi_r02_client:
-    // CMD 0x01
-    // Data: Year%2000, Month, Day, Hour, Min, Sec (All BCD encoded)
-    // Byte 6: 1 (Language: English)
-
     List<int> timeData = [
       _intToBcd(now.year % 2000),
       _intToBcd(now.month),
@@ -450,10 +445,11 @@ class BleService extends ChangeNotifier {
   int _batteryLevel = 0;
   int get batteryLevel => _batteryLevel;
 
-  List<int> _hrHistory = [];
-  List<int> get hrHistory => _hrHistory;
+  // HR History as Points (Time, Value)
+  List<Point> _hrHistory = [];
+  List<Point> get hrHistory => _hrHistory;
 
-  // Using a simple Point class for steps (TimeIndex, Steps)
+  // Steps History as Points (TimeIndex, Steps)
   List<Point> _stepsHistory = [];
   List<Point> get stepsHistory => _stepsHistory;
 
@@ -470,8 +466,6 @@ class BleService extends ChangeNotifier {
     if (_writeChar == null) return;
     try {
       // Request for today
-      // For simplicity, just requesting today's log
-      // In a real app, we might iterate over days
       await _writeChar!.write(
         PacketFactory.getHeartRateLogPacket(DateTime.now()),
       );
