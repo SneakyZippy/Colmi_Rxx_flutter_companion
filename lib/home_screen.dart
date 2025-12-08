@@ -9,7 +9,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Colmi R12 Monitor')),
+      appBar: AppBar(title: const Text('Ringularity Version 1.0.0')),
       body: Consumer<BleService>(
         builder: (context, ble, child) {
           return Center(
