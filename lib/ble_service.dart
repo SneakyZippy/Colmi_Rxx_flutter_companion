@@ -264,12 +264,27 @@ class BleService extends ChangeNotifier {
           debugPrint("Steps Log Start");
           _stepsHistory.clear();
         } else if (byte1 != 0xFF) {
-          int timeIndex = data[dataOffset + 3];
-          int stepsVal = data[dataOffset + 8] | (data[dataOffset + 9] << 8);
-          if (stepsVal > 0) {
-            _stepsHistory.add(Point(timeIndex, stepsVal));
-            notifyListeners();
+          int baseTimeIndex = data[dataOffset + 3]; // e.g. 0, 4, 8...
+
+          // Data starts at offset + 8 (index 9)
+          // We assume 4 entries of 2 bytes each (Steps only) to fit in 20 bytes
+          // Layout: [Idx] [Date 4b?] [S0] [S1] [S2] [S3]
+          int startSteps = dataOffset + 8;
+          int count = 0;
+
+          // Read up to 4 entries, ensuring we don't read past valid data
+          while (count < 4 && (startSteps + (count * 2) + 1) < data.length) {
+            int idx = startSteps + (count * 2);
+            int stepsVal = data[idx] | (data[idx + 1] << 8);
+
+            if (stepsVal > 0) {
+              // Only add non-zero steps? Or all?
+              // Adding 0 is fine for "No steps walked", good for graph continuity
+              _stepsHistory.add(Point(baseTimeIndex + count, stepsVal));
+            }
+            count++;
           }
+          if (count > 0) notifyListeners();
         }
       }
 
@@ -472,6 +487,13 @@ class BleService extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error syncing HR history: $e");
     }
+  }
+
+  Future<void> syncAllData() async {
+    await syncTime();
+    await getBatteryLevel();
+    await syncHistory();
+    await syncHeartRateHistory();
   }
 
   void _cleanup() {

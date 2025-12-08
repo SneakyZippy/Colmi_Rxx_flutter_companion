@@ -93,18 +93,15 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  ElevatedButton(
+                  ElevatedButton.icon(
                     onPressed: () {
-                      ble.syncHistory();
+                      ble.syncAllData();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Syncing all data...')),
+                      );
                     },
-                    child: const Text('Sync History (Steps)'),
-                  ),
-                  const SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: () {
-                      ble.syncTime();
-                    },
-                    child: const Text('Sync Time'),
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Sync All Data'),
                   ),
                   const SizedBox(height: 20),
                   const SizedBox(height: 20),
