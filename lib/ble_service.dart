@@ -34,9 +34,8 @@ class BleService extends ChangeNotifier {
   String _lastLog = "No data received";
   String get lastLog => _lastLog;
 
-  int _steps = 0;
+  final int _steps = 0;
   int get steps => _steps;
-
   // Device Name Filters
   static const List<String> _targetDeviceNames = [
     "R12",
@@ -87,7 +86,7 @@ class BleService extends ChangeNotifier {
         // Filter results based on target names
         _scanResults = results.where((r) {
           String name = r.device.platformName;
-          if (name.isEmpty) name = r.advertisementData.localName;
+          if (name.isEmpty) name = r.advertisementData.advName;
           return _targetDeviceNames.any((target) => name.contains(target));
         }).toList();
         notifyListeners();
@@ -186,8 +185,9 @@ class BleService extends ChangeNotifier {
     } else {
       // Fallback logic for safety, but try to avoid system services
       for (var s in services) {
-        if (s.uuid.toString().startsWith("000018"))
+        if (s.uuid.toString().startsWith("000018")) {
           continue; // Skip standard GATT services
+        }
 
         for (var c in s.characteristics) {
           if (_writeChar == null &&
@@ -242,7 +242,7 @@ class BleService extends ChangeNotifier {
       }
 
       // Live Heart Rate (0x69)
-      if (cmd == PacketFactory.CMD_HEART_RATE_MEASUREMENT) {
+      if (cmd == PacketFactory.cmdHeartRateMeasurement) {
         int valueIndex = 3 + (dataOffset - 1);
         if (data.length > valueIndex) {
           _heartRate = data[valueIndex];
@@ -257,7 +257,7 @@ class BleService extends ChangeNotifier {
       }
 
       // Steps History (0x43)
-      if (cmd == PacketFactory.CMD_GET_STEPS) {
+      if (cmd == PacketFactory.cmdGetSteps) {
         if (data.length < 13) return;
         int byte1 = data[dataOffset];
         if (byte1 == 0xF0) {
@@ -289,7 +289,7 @@ class BleService extends ChangeNotifier {
       }
 
       // Battery Level (0x03)
-      if (cmd == PacketFactory.CMD_GET_BATTERY) {
+      if (cmd == PacketFactory.cmdGetBattery) {
         int levelIndex = 1 + (dataOffset - 1);
         if (data.length > levelIndex) {
           _batteryLevel = data[levelIndex];
@@ -298,7 +298,7 @@ class BleService extends ChangeNotifier {
       }
 
       // Heart Rate Log (0x15) - UPDATED with Timestamp Logic
-      if (cmd == PacketFactory.CMD_GET_HEART_RATE_LOG) {
+      if (cmd == PacketFactory.cmdGetHeartRateLog) {
         if (data.length < 2) return;
         int subType = data[dataOffset];
 
@@ -326,11 +326,9 @@ class BleService extends ChangeNotifier {
 
             // Data starts at dataOffset + 5
             int startData = dataOffset + 5;
-            for (
-              int i = startData;
-              i < data.length - 1 && i < startData + 9;
-              i++
-            ) {
+            for (int i = startData;
+                i < data.length - 1 && i < startData + 9;
+                i++) {
               int val = data[i];
               if (val != 0 && val != 255) {
                 _addHrPoint(val);
@@ -342,11 +340,9 @@ class BleService extends ChangeNotifier {
           // Data Packet (Continues from previous time block)
           // Data starts at dataOffset + 1
           int startData = dataOffset + 1;
-          for (
-            int i = startData;
-            i < data.length - 1 && i < startData + 13;
-            i++
-          ) {
+          for (int i = startData;
+              i < data.length - 1 && i < startData + 13;
+              i++) {
             int val = data[i];
             if (val != 0 && val != 255) {
               _addHrPoint(val);
@@ -436,7 +432,7 @@ class BleService extends ChangeNotifier {
 
     try {
       List<int> packet = PacketFactory.createPacket(
-        command: PacketFactory.CMD_SET_TIME,
+        command: PacketFactory.cmdSetTime,
         data: timeData,
       );
       await _writeChar!.write(packet);
@@ -461,11 +457,11 @@ class BleService extends ChangeNotifier {
   int get batteryLevel => _batteryLevel;
 
   // HR History as Points (Time, Value)
-  List<Point> _hrHistory = [];
+  final List<Point> _hrHistory = [];
   List<Point> get hrHistory => _hrHistory;
 
   // Steps History as Points (TimeIndex, Steps)
-  List<Point> _stepsHistory = [];
+  final List<Point> _stepsHistory = [];
   List<Point> get stepsHistory => _stepsHistory;
 
   Future<void> getBatteryLevel() async {

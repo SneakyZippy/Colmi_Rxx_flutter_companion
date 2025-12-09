@@ -35,8 +35,9 @@ class HomeScreen extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final result = ble.scanResults[index];
                         String name = result.device.platformName;
-                        if (name.isEmpty)
-                          name = result.advertisementData.localName;
+                        if (name.isEmpty) {
+                          name = result.advertisementData.advName;
+                        }
                         if (name.isEmpty) name = "Unknown Device";
 
                         return ListTile(

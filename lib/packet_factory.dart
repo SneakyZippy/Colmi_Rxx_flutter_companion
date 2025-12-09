@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 class PacketFactory {
   // Command Constants
-  static const int CMD_HEART_RATE_MEASUREMENT = 0x69; // 105 in decimal
-  static const int CMD_SET_TIME =
+  static const int cmdHeartRateMeasurement = 0x69; // 105 in decimal
+  static const int cmdSetTime =
       0x01; // Example for Time Sync, need to confirm header/cmd structure
 
   // Headers
@@ -43,7 +43,7 @@ class PacketFactory {
     // Payload: [ReadingType.HEART_RATE (1), Action.START (1)]
     // Based on tahnok/colmi_r02_client
     return createPacket(
-      command: CMD_HEART_RATE_MEASUREMENT,
+      command: cmdHeartRateMeasurement,
       data: [0x01, 0x01],
     );
   }
@@ -52,26 +52,26 @@ class PacketFactory {
     // 0x69 is CMD_START_REAL_TIME
     // Payload: [ReadingType.HEART_RATE (1), Action.STOP (0)]
     return createPacket(
-      command: CMD_HEART_RATE_MEASUREMENT,
+      command: cmdHeartRateMeasurement,
       data: [0x01, 0x00],
     );
   }
 
-  static const int CMD_GET_STEPS = 0x43; // 67 decimal
+  static const int cmdGetSteps = 0x43; // 67 decimal
 
   /// Creates packet to request steps for a specific day offset
   static Uint8List getStepsPacket({int dayOffset = 0}) {
     List<int> data = [dayOffset, 0x0f, 0x00, 0x5f, 0x01];
-    return createPacket(command: CMD_GET_STEPS, data: data);
+    return createPacket(command: cmdGetSteps, data: data);
   }
 
   // New Commands
-  static const int CMD_GET_BATTERY = 0x03;
-  static const int CMD_GET_HEART_RATE_LOG = 0x15; // 21 decimal
+  static const int cmdGetBattery = 0x03;
+  static const int cmdGetHeartRateLog = 0x15; // 21 decimal
 
   /// Creates packet to request battery level
   static Uint8List getBatteryPacket() {
-    return createPacket(command: CMD_GET_BATTERY);
+    return createPacket(command: cmdGetBattery);
   }
 
   /// Creates packet to request Heart Rate Log for a specific date
@@ -91,6 +91,6 @@ class PacketFactory {
       data[i] = byteData.getUint8(i);
     }
 
-    return createPacket(command: CMD_GET_HEART_RATE_LOG, data: data);
+    return createPacket(command: cmdGetHeartRateLog, data: data);
   }
 }

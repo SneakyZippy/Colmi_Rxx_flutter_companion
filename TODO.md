@@ -23,3 +23,13 @@
 - [ ] **Refactor BleService:** Improve timeout handling if the ring doesn't respond to a command.
 - [ ] **Linting:** Add `flutter_lints` rules to enforce clean code standards.
 - [ ] **Dark/Light Mode:** Implement logic to respect the system theme.
+
+
+
+## Not Sorted
+- [ ] **Delete Stats function:** A way to delete stats for better debugging.
+- [ ] **Zoom Graph** Allow zooming in and out of the graph
+- [ ] **Graphs** Fix graphs
+- [ ] **spO2** Add spO2 to the graphs
+
+

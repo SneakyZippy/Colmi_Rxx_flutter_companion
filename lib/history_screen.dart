@@ -219,7 +219,7 @@ class HistoryScreen extends StatelessWidget {
               dotData: const FlDotData(show: false),
               belowBarData: BarAreaData(
                 show: true,
-                color: Colors.red.withOpacity(0.3),
+                color: Colors.red.withValues(alpha: 0.3),
               ),
             ),
           ],
@@ -236,8 +236,9 @@ class HistoryScreen extends StatelessWidget {
                 interval: 240, // Show labels every 4 hours (240 min)
                 getTitlesWidget: (value, meta) {
                   int minutesFromMidnight = value.toInt();
-                  if (minutesFromMidnight < 0 || minutesFromMidnight >= 1440)
+                  if (minutesFromMidnight < 0 || minutesFromMidnight >= 1440) {
                     return const Text('');
+                  }
 
                   int h = minutesFromMidnight ~/ 60;
                   int m = minutesFromMidnight % 60;
