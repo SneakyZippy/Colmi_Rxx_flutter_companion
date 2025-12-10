@@ -28,11 +28,30 @@ class BleService extends ChangeNotifier {
   int _heartRate = 0;
   int get heartRate => _heartRate;
 
+  int _spo2 = 0;
+  int get spo2 => _spo2;
+
   String _status = "Disconnected";
   String get status => _status;
 
   String _lastLog = "No data received";
   String get lastLog => _lastLog;
+
+  final List<String> _protocolLog = [];
+  List<String> get protocolLog => List.unmodifiable(_protocolLog);
+
+  void addToProtocolLog(String message, {bool isTx = false}) {
+    final timestamp = DateTime.now().toIso8601String().substring(11, 19);
+    final prefix = isTx ? "TX" : "RX";
+    final logEntry = "[$timestamp] $prefix: $message";
+
+    _protocolLog.add(logEntry);
+    if (_protocolLog.length > 1000) {
+      _protocolLog.removeAt(0);
+    }
+    debugPrint(logEntry);
+    notifyListeners();
+  }
 
   final int _steps = 0;
   int get steps => _steps;
@@ -217,19 +236,32 @@ class BleService extends ChangeNotifier {
 
   bool _isMeasuringHeartRate = false;
   bool get isMeasuringHeartRate => _isMeasuringHeartRate;
+
+  bool _isMeasuringSpo2 = false;
+  bool get isMeasuringSpo2 => _isMeasuringSpo2;
+
   Timer? _hrTimer;
+  Timer? _spo2Timer;
 
   // HR History Parser State
   int _hrLogInterval = 5; // Default 5 mins
   int _hrLogBaseTime = 0; // Unix Timestamp
   int _hrLogCount = 0;
 
+  // SpO2 History Parser State
+  int _spo2LogInterval = 5;
+  int _spo2LogBaseTime = 0;
+  int _spo2LogCount = 0;
+
   void _onDataReceived(List<int> data) {
     if (data.isEmpty) return;
 
-    // Log raw data for debugging
-    _lastLog = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-    notifyListeners();
+    // Log raw data
+    String hexData =
+        data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+
+    addToProtocolLog(hexData);
+    _lastLog = "RX: $hexData";
 
     // Parse data
     if (data.length > 1) {
@@ -243,16 +275,136 @@ class BleService extends ChangeNotifier {
 
       // Live Heart Rate (0x69)
       if (cmd == PacketFactory.cmdHeartRateMeasurement) {
-        int valueIndex = 3 + (dataOffset - 1);
-        if (data.length > valueIndex) {
-          _heartRate = data[valueIndex];
-          notifyListeners();
+        // We need to differentiate between HR (0x01) and SpO2 (0x03)
+        // Usually the response echoes the type.
+        // Let's assume response structure: [Header, SubType, ... Val ...]
+        // Based on Python code:
+        // Response for Start/RealTime data: [0x69, reading_type, value...]
+
+        int subType = data[dataOffset];
+        // Note: dataOffset points to first data byte. Header is data[0] or data[1].
+        // If cmd was 0xA1, dataOffset is 2.
+
+        // ReadingType: 1=HR, 3=SpO2
+        if (subType == 0x01) {
+          // int valueIndex = subType + 2; // Removed unused variable
+          // Tahnok docs: "Responses use subdata...".
+          // If payload is [Type, Val], then value is at dataOffset + 1
+          // If data is [0x69, 0x01, HR], value is at index 2.
+
+          // Let's rely on observation or try generic offset
+          // Previous code: int valueIndex = 3 + (dataOffset - 1);
+          // If dataOffset=1, valIndex=3. data[3]?
+
+          // Let's make it more robust.
+          // If data=[0x69, 0x01, 0x48, ...], HR=72.
+          if (data.length > dataOffset + 1) {
+            _heartRate = data[
+                dataOffset + 1]; // This seems more likely for [Type, Value]
+            notifyListeners();
+          }
 
           if (_isMeasuringHeartRate) {
-            debugPrint("HR Received - Scheduling next in 1s");
+            debugPrint("HR Received - Auto-stopping (One-Shot)");
+            _isMeasuringHeartRate = false;
             _hrTimer?.cancel();
-            _hrTimer = Timer(const Duration(seconds: 1), _triggerHrMeasurement);
+            notifyListeners();
           }
+        } else if (subType == 0x03) {
+          // SpO2
+          // Debug Log for SpO2
+          _lastLog = "SpO2 RX: $subType Len:${data.length}";
+
+          int val = 0;
+          if (data.length > dataOffset + 1) {
+            val = data[dataOffset + 1];
+          }
+          // Sometimes value might be at offset+2 if offset+1 is 0x00?
+          if (val == 0 && data.length > dataOffset + 2) {
+            val = data[dataOffset + 2];
+          }
+
+          if (val > 0) {
+            _spo2 = val;
+            _isMeasuringSpo2 = false; // Auto-stop measurement state
+            _lastLog = "SpO2 Success: $val";
+
+            // Polyfill: Add to history immediately
+            final now = DateTime.now();
+            int minutesFromMidnight = now.hour * 60 + now.minute;
+            // Avoid duplicates: remove existing for this minute?
+            _spo2History.removeWhere((p) => p.x == minutesFromMidnight);
+            _spo2History.add(Point(minutesFromMidnight, val));
+            // Keep sorted
+            _spo2History.sort((a, b) => a.x.compareTo(b.x));
+
+            notifyListeners();
+          } else {
+            _lastLog = "SpO2 Zero Val";
+            notifyListeners();
+          }
+
+          // Cancel timer if we got value
+          if (val > 0) {
+            _spo2Timer?.cancel();
+            _spo2Timer = null;
+          }
+        }
+      }
+
+      // SpO2 Log (0x16)
+      if (cmd == PacketFactory.cmdGetSpo2Log) {
+        if (data.length < 2) return;
+        int subType = data[dataOffset];
+
+        if (subType == 0 || subType == 0xF0) {
+          // Start Packet
+          // Packet: [16, 00, INTERVAL, ...]
+          // Interval is at offset+1 (Index 2)
+          if (data.length > dataOffset + 1) {
+            int interval = data[dataOffset + 1];
+            if (interval > 0) _spo2LogInterval = interval;
+          }
+          debugPrint(
+              "SpO2 Log Start: Interval=$_spo2LogInterval SubType=${subType.toRadixString(16)}");
+          _spo2History.clear();
+          notifyListeners();
+        } else if (subType == 1) {
+          // Timestamp Packet
+          if (data.length >= dataOffset + 5) {
+            int t0 = data[dataOffset + 1];
+            int t1 = data[dataOffset + 2];
+            int t2 = data[dataOffset + 3];
+            int t3 = data[dataOffset + 4];
+            _spo2LogBaseTime = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24);
+            _spo2LogCount = 0;
+            debugPrint("SpO2 Log TimeBlock: $_spo2LogBaseTime");
+
+            // Data starts at dataOffset + 5
+            int startData = dataOffset + 5;
+            for (int i = startData;
+                i < data.length - 1 && i < startData + 9;
+                i++) {
+              int val = data[i];
+              if (val != 0 && val != 255) {
+                _addSpo2Point(val);
+              }
+              _spo2LogCount++;
+            }
+          }
+        } else {
+          // Data Packet
+          int startData = dataOffset + 1;
+          for (int i = startData;
+              i < data.length - 1 && i < startData + 13;
+              i++) {
+            int val = data[i];
+            if (val != 0 && val != 255) {
+              _addSpo2Point(val);
+            }
+            _spo2LogCount++;
+          }
+          notifyListeners();
         }
       }
 
@@ -304,7 +456,9 @@ class BleService extends ChangeNotifier {
 
         if (subType == 0) {
           // Start Packet
-          // interval at offset+2
+          // Packet: [15, 00, 18, 05, ...]
+          // It seems HR stores INTERVAL at offset+2 (Index 3, value 05)
+          // The byte at offset+1 (0x18) might be a flag or length.
           if (data.length > dataOffset + 2) {
             int interval = data[dataOffset + 2];
             if (interval > 0) _hrLogInterval = interval;
@@ -368,47 +522,85 @@ class BleService extends ChangeNotifier {
     if (dt.year != _selectedDate.year ||
         dt.month != _selectedDate.month ||
         dt.day != _selectedDate.day) {
+      debugPrint(
+          "Skipping HR Point: Date Mismatch - Point: $dt, Selected: $_selectedDate");
       return;
     }
 
     // Filter Future Data
     // Device might send garbage timestamps or "next day" init data
     if (dt.isAfter(DateTime.now())) {
-      // debugPrint("Skipping HR Point (Future): $dt");
+      debugPrint("Skipping HR Point: Future Data - Point: $dt");
       return;
     }
 
     int minutesFromMidnight = dt.hour * 60 + dt.minute;
+    debugPrint(
+        "Adding HR Point: $dt ($minutesFromMidnight min) = $hrValue BPM");
 
     // Avoid duplicate X values if possible, or just add
     // List<Point> allows duplicates, Graph will plot them
     _hrHistory.add(Point(minutesFromMidnight, hrValue));
   }
 
+  void _addSpo2Point(int val) {
+    if (_spo2LogBaseTime == 0) return;
+    int pointTimeSeconds =
+        _spo2LogBaseTime + (_spo2LogCount * _spo2LogInterval * 60);
+    DateTime dt = DateTime.fromMillisecondsSinceEpoch(pointTimeSeconds * 1000);
+
+    if (dt.year != _selectedDate.year ||
+        dt.month != _selectedDate.month ||
+        dt.day != _selectedDate.day) {
+      debugPrint(
+          "Skipping SpO2 Point: Date Mismatch - Point: $dt, Selected: $_selectedDate");
+      return;
+    }
+    if (dt.isAfter(DateTime.now())) {
+      debugPrint("Skipping SpO2 Point: Future Data - Point: $dt");
+      return;
+    }
+
+    int minutesFromMidnight = dt.hour * 60 + dt.minute;
+    debugPrint("Adding SpO2 Point: $dt = $val %");
+    _spo2History.add(Point(minutesFromMidnight, val));
+  }
+
   Future<void> startHeartRate() async {
     if (_writeChar == null) return;
 
-    _isMeasuringHeartRate = true;
-    notifyListeners();
-    _triggerHrMeasurement();
-  }
-
-  void _triggerHrMeasurement() async {
-    if (!_isMeasuringHeartRate || _writeChar == null) return;
+    // Mutual Exclusion: Stop SpO2 if running
+    if (_isMeasuringSpo2) {
+      debugPrint("Stopping SpO2 to start Heart Rate");
+      await stopSpo2();
+    }
 
     try {
+      _isMeasuringHeartRate = true;
+      notifyListeners();
+
+      // Send Command ONCE
       List<int> packet = PacketFactory.startHeartRate();
+      final hex =
+          packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      addToProtocolLog(hex + " (Start HR)", isTx: true);
       await _writeChar!.write(packet);
       debugPrint("Sent Single HR Request");
 
+      // Schedule Timeout Safety
       _hrTimer?.cancel();
-      _hrTimer = Timer(const Duration(seconds: 15), () {
-        debugPrint("HR Watchdog Timeout - Retrying...");
-        _triggerHrMeasurement();
+      _hrTimer = Timer(const Duration(seconds: 45), () {
+        if (_isMeasuringHeartRate) {
+          debugPrint("HR Timeout - Force Stopping");
+          stopHeartRate();
+          _lastLog = "HR Timeout";
+          notifyListeners();
+        }
       });
     } catch (e) {
-      debugPrint("Error triggering HR: $e");
-      _hrTimer = Timer(const Duration(seconds: 5), _triggerHrMeasurement);
+      debugPrint("Error starting HR: $e");
+      _isMeasuringHeartRate = false;
+      notifyListeners();
     }
   }
 
@@ -421,10 +613,82 @@ class BleService extends ChangeNotifier {
 
     try {
       List<int> packet = PacketFactory.stopHeartRate();
+      final hex =
+          packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      addToProtocolLog(hex + " (Stop HR)", isTx: true);
       await _writeChar!.write(packet);
     } catch (e) {
       debugPrint("Error sending stop HR: $e");
     }
+  }
+
+  Future<void> startSpo2() async {
+    if (_writeChar == null) return;
+
+    // Mutual Exclusion: Stop Heart Rate if running
+    if (_isMeasuringHeartRate) {
+      debugPrint("Stopping Heart Rate to start SpO2");
+      await stopHeartRate();
+    }
+
+    try {
+      _isMeasuringSpo2 = true;
+      notifyListeners();
+
+      // Send Command ONCE
+      List<int> packet = PacketFactory.startSpo2();
+      final hex =
+          packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      addToProtocolLog(hex + " (Start SpO2)", isTx: true);
+      await _writeChar!.write(packet);
+
+      // Schedule Timeout Safety
+      _spo2Timer?.cancel();
+      _spo2Timer = Timer(const Duration(seconds: 45), () {
+        if (_isMeasuringSpo2) {
+          debugPrint("SpO2 Timeout - Force Stopping");
+          stopSpo2();
+          _lastLog = "SpO2 Timeout";
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint("Error starting SpO2: $e");
+      _isMeasuringSpo2 = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopSpo2() async {
+    if (_writeChar == null) return;
+    _isMeasuringSpo2 = false;
+    _spo2Timer?.cancel();
+    notifyListeners();
+    try {
+      // Send SpO2 Stop
+      List<int> p1 = PacketFactory.stopSpo2();
+      addToProtocolLog(
+          p1.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ') +
+              " (Stop SpO2)",
+          isTx: true);
+      await _writeChar!.write(p1);
+
+      // Also send Heart Rate Stop (as a "Master Stop")
+      List<int> p2 = PacketFactory.stopHeartRate();
+      addToProtocolLog(
+          p2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ') +
+              " (Stop HR-Master)",
+          isTx: true);
+      await _writeChar!.write(p2);
+    } catch (e) {
+      debugPrint("Error stop SpO2: $e");
+    }
+  }
+
+  Future<void> stopAllMeasurements() async {
+    debugPrint("Stopping ALL measurements");
+    if (_isMeasuringHeartRate) await stopHeartRate();
+    if (_isMeasuringSpo2) await stopSpo2();
   }
 
   int _intToBcd(int b) {
@@ -499,6 +763,9 @@ class BleService extends ChangeNotifier {
   final List<Point> _hrHistory = [];
   List<Point> get hrHistory => _hrHistory;
 
+  final List<Point> _spo2History = [];
+  List<Point> get spo2History => _spo2History;
+
   // Steps History as Points (TimeIndex, Steps)
   final List<Point> _stepsHistory = [];
   List<Point> get stepsHistory => _stepsHistory;
@@ -515,11 +782,9 @@ class BleService extends ChangeNotifier {
   Future<void> syncHeartRateHistory() async {
     if (_writeChar == null) return;
     try {
-      // Request for selected date
       final startOfDay =
           DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
       debugPrint("Requesting HR for: $startOfDay");
-
       await _writeChar!.write(
         PacketFactory.getHeartRateLogPacket(startOfDay),
       );
@@ -528,11 +793,34 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  Future<void> syncSpo2History() async {
+    if (_writeChar == null) return;
+    try {
+      final startOfDay =
+          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      debugPrint("Requesting SpO2 History for: $startOfDay");
+
+      // Calculate offset from today (0 = today, 1 = yesterday etc? Or negative?)
+      // Steps usually uses positive offset for "daysAgo".
+      // offset = (Today - Selected).inDays
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      int offset = today.difference(startOfDay).inDays;
+      if (offset < 0) offset = 0; // Future dates not allowed
+
+      await _writeChar!
+          .write(PacketFactory.getSpo2LogPacket(dayOffset: offset));
+    } catch (e) {
+      debugPrint("Error syncing SpO2 history: $e");
+    }
+  }
+
   Future<void> syncAllData() async {
     await syncTime();
     await getBatteryLevel();
     await syncHistory();
     await syncHeartRateHistory();
+    await syncSpo2History();
   }
 
   void _cleanup() {

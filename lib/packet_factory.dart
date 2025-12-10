@@ -49,11 +49,27 @@ class PacketFactory {
   }
 
   static Uint8List stopHeartRate() {
-    // 0x69 is CMD_START_REAL_TIME
-    // Payload: [ReadingType.HEART_RATE (1), Action.STOP (0)]
+    // Reverting to 0x00
     return createPacket(
       command: cmdHeartRateMeasurement,
       data: [0x01, 0x00],
+    );
+  }
+
+  static Uint8List startSpo2() {
+    // 0x69 is CMD_START_REAL_TIME
+    // Payload: [ReadingType.SPO2 (3), Action.START (1)]
+    return createPacket(
+      command: cmdHeartRateMeasurement,
+      data: [0x03, 0x01],
+    );
+  }
+
+  static Uint8List stopSpo2() {
+    // Reverting to 0x00
+    return createPacket(
+      command: cmdHeartRateMeasurement,
+      data: [0x03, 0x00],
     );
   }
 
@@ -72,6 +88,7 @@ class PacketFactory {
   // New Commands
   static const int cmdGetBattery = 0x03;
   static const int cmdGetHeartRateLog = 0x15; // 21 decimal
+  static const int cmdGetSpo2Log = 0x16; // 22 decimal (Experimental)
 
   /// Creates packet to request battery level
   static Uint8List getBatteryPacket() {
@@ -96,5 +113,17 @@ class PacketFactory {
     }
 
     return createPacket(command: cmdGetHeartRateLog, data: data);
+  }
+
+  /// Creates packet to request SpO2 Log
+  /// [dayOffset] - 0 for today. Structure same as Steps (0x43).
+  static Uint8List getSpo2LogPacket({int dayOffset = 0}) {
+    // Structure assumed same as Steps (0x43) since response starts with 0xF0
+    // [DayOffset, Key?, Start?, Count?, ?]
+    // Steps uses: [Offset, 0x0f, 0x00, 0x60, 0x00]
+    // We try the same structure for SpO2. Count 0x60 (96) covers 24h of 15-min blocks.
+    // If SpO2 is sparse, this might just request "a day's buffer".
+    List<int> data = [dayOffset, 0x0f, 0x00, 0x60, 0x00];
+    return createPacket(command: cmdGetSpo2Log, data: data);
   }
 }

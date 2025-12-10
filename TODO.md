@@ -28,8 +28,10 @@
 
 ## Not Sorted
 - [ ] **Delete Stats function:** A way to delete stats for better debugging.
-- [ ] **Zoom Graph** Allow zooming in and out of the graph
+- [x] **Zoom Graph** Allow zooming in and out of the graph
 - [x] **Graphs** Fix graphs
 - [ ] **spO2** Add spO2 to the graphs
+- [x] **Graphs** When switching to a graph it should only show timeframe from where the data is viable
+
 
 
