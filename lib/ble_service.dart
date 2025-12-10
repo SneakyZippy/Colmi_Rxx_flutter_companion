@@ -363,6 +363,21 @@ class BleService extends ChangeNotifier {
     int pointTimeSeconds = _hrLogBaseTime + (_hrLogCount * _hrLogInterval * 60);
     DateTime dt = DateTime.fromMillisecondsSinceEpoch(pointTimeSeconds * 1000);
 
+    // Filter by Selected Date
+    // If dt is not on the same day as selectedDate, ignore it.
+    if (dt.year != _selectedDate.year ||
+        dt.month != _selectedDate.month ||
+        dt.day != _selectedDate.day) {
+      return;
+    }
+
+    // Filter Future Data
+    // Device might send garbage timestamps or "next day" init data
+    if (dt.isAfter(DateTime.now())) {
+      // debugPrint("Skipping HR Point (Future): $dt");
+      return;
+    }
+
     int minutesFromMidnight = dt.hour * 60 + dt.minute;
 
     // Avoid duplicate X values if possible, or just add
@@ -441,12 +456,36 @@ class BleService extends ChangeNotifier {
     }
   }
 
+  DateTime _selectedDate = DateTime.now();
+  DateTime get selectedDate => _selectedDate;
+
+  void setSelectedDate(DateTime date) {
+    _selectedDate = date;
+    notifyListeners();
+    // Auto-sync when date changes? Or let UI trigger it?
+    // Let's clear current data to avoid confusion
+    _hrHistory.clear();
+    _stepsHistory.clear();
+    _lastLog = "Date changed to $date";
+    notifyListeners();
+  }
+
   Future<void> syncHistory() async {
     if (_writeChar == null) return;
 
     try {
-      // Request Steps for today (Offset 0)
-      List<int> packet = PacketFactory.getStepsPacket(dayOffset: 0);
+      // Calculate day offset
+      // 0 = Today, 1 = Yesterday
+      // Protocol likely uses "Day Offset" (0, 1, 2...)
+      final now = DateTime.now();
+      final difference = now.difference(_selectedDate).inDays;
+      // Ensure positive or zero
+      int offset = difference < 0 ? 0 : difference;
+
+      debugPrint(
+          "Requesting Steps for Offset: $offset (${_selectedDate.toString()})");
+
+      List<int> packet = PacketFactory.getStepsPacket(dayOffset: offset);
       await _writeChar!.write(packet);
     } catch (e) {
       debugPrint("Error syncing history: $e");
@@ -476,9 +515,13 @@ class BleService extends ChangeNotifier {
   Future<void> syncHeartRateHistory() async {
     if (_writeChar == null) return;
     try {
-      // Request for today
+      // Request for selected date
+      final startOfDay =
+          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      debugPrint("Requesting HR for: $startOfDay");
+
       await _writeChar!.write(
-        PacketFactory.getHeartRateLogPacket(DateTime.now()),
+        PacketFactory.getHeartRateLogPacket(startOfDay),
       );
     } catch (e) {
       debugPrint("Error syncing HR history: $e");

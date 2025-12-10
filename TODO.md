@@ -1,8 +1,8 @@
 # 🗺️ Project Roadmap & TODOs
 
 ## 🚨 High Priority (Critical)
-- [ ] **Data Reset Bug:** Fix issue where Steps and HR data resets incorrectly after midnight (00:00) or when staying up late.
-- [ ] **History Sync:** Implement logic to download saved sleep/heart rate data from the ring's flash memory.
+- [x] **Data Reset Bug:** Fix issue where Steps and HR data resets incorrectly after midnight (00:00) or when staying up late.
+- [x] **History Sync:** Implement logic to download saved sleep/heart rate data from the ring's flash memory.
 - [ ] **Local Database:** Set up `hive` or `sqflite` to persist downloaded data so it remains available after closing the app.
 - [ ] **SpO2 Monitoring:** Add support for live blood oxygen data parsing and visualization.
 
@@ -29,7 +29,7 @@
 ## Not Sorted
 - [ ] **Delete Stats function:** A way to delete stats for better debugging.
 - [ ] **Zoom Graph** Allow zooming in and out of the graph
-- [ ] **Graphs** Fix graphs
+- [x] **Graphs** Fix graphs
 - [ ] **spO2** Add spO2 to the graphs
 
 
