@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'ble_service.dart';
 import 'history_screen.dart';
+import 'sensor_screen.dart';
+import 'command_tester_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -186,10 +188,52 @@ class HomeScreen extends StatelessWidget {
                       icon: const Icon(Icons.show_chart),
                       label: const Text('View History Graphs'),
                     ),
-
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const SensorScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.sensors),
+                      label: const Text('Sensor Data (Raw)'),
+                    ),
                     const SizedBox(height: 20),
                     const Divider(),
-                    const Text("Debug Log (Last Packet):"),
+                    const Text("Debug Tools"),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Provider.of<BleService>(context, listen: false)
+                              .forceStopEverything(),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red[900],
+                          foregroundColor: Colors.white),
+                      child: const Text("FORCE STOP (Lights Off)"),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Provider.of<BleService>(context, listen: false)
+                              .rebootRing(),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange[800],
+                          foregroundColor: Colors.white),
+                      child: const Text("REBOOT RING"),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) =>
+                                  const CommandTesterScreen()),
+                        );
+                      },
+                      child: const Text("Command Tester (Logs)"),
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: Text(

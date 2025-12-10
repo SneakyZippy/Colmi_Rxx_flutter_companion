@@ -1,10 +1,25 @@
 # 🗺️ Project Roadmap & TODOs
 
+## 🔭 Open Tasks (Immediate Next Steps)
+- [ ] **Data Visualization:**
+    - [ ] Real-time graph for Heart Rate (Live).
+    - [ ] Real-time graph for SpO2 (Live).
+    - [ ] Historical charts for all sensors. (spo2 not working)
+- [ ] **Wear Detection:**
+    - [ ] Refine "Wear Status" logic (currently based on simple PPG limits).
+    - [ ] Investigate valid ranges for "Off Finger" vs "On Finger".
+- [ ] **Gestures & Actions:**
+    - [ ] Decode `0x2F` packets (Tap/Spin detection).
+    - [ ] Implement "Music Control" or "Slide Control" using ring gestures.
+- [ ] **Code Cleanup:**
+    - [ ] Remove unused debug prints.
+    - [ ] Organize `PacketFactory` and `BleService` into cleaner modules.
+
 ## 🚨 High Priority (Critical)
 - [x] **Data Reset Bug:** Fix issue where Steps and HR data resets incorrectly after midnight (00:00) or when staying up late.
 - [x] **History Sync:** Implement logic to download saved sleep/heart rate data from the ring's flash memory.
 - [ ] **Local Database:** Set up `hive` or `sqflite` to persist downloaded data so it remains available after closing the app.
-- [ ] **SpO2 Monitoring:** Add support for live blood oxygen data parsing and visualization.
+- [ ] **SpO2 Monitoring:** Basic measurement and history sync implemented. (Visualization pending).
 
 ## 🟠 Medium Priority
 - [x] **Sync Time:** Add button to sync phone time to ring (Fixes display issues).
@@ -32,6 +47,8 @@
 - [x] **Graphs** Fix graphs
 - [ ] **spO2** Add spO2 to the graphs
 - [x] **Graphs** When switching to a graph it should only show timeframe from where the data is viable
+
+
 
 
 

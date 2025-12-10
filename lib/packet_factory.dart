@@ -39,9 +39,8 @@ class PacketFactory {
 
   /// Creates sample commands based on user request
   static Uint8List startHeartRate() {
-    // 0x69 is CMD_START_REAL_TIME
-    // Payload: [ReadingType.HEART_RATE (1), Action.START (1)]
-    // Based on tahnok/colmi_r02_client
+    // 0x6901 - Request Heart Rate (Real-time)
+    // Payload: [0x01] or [0x01, 0x01] commonly used for Start
     return createPacket(
       command: cmdHeartRateMeasurement,
       data: [0x01, 0x01],
@@ -49,28 +48,46 @@ class PacketFactory {
   }
 
   static Uint8List stopHeartRate() {
-    // Reverting to 0x00
+    // 0x69 0x01 0x00 - Stop Real-time Measurement
     return createPacket(
       command: cmdHeartRateMeasurement,
       data: [0x01, 0x00],
     );
   }
 
+  static Uint8List disableHeartRate() {
+    // 0x16 0x02 0x00 - Disable Periodic Monitoring
+    return createPacket(
+      command: 0x16,
+      data: [0x02, 0x00],
+    );
+  }
+
+  // Reference: requestSpO2 (hex: '6903') - This is the Real-Time measurement
   static Uint8List startSpo2() {
-    // 0x69 is CMD_START_REAL_TIME
-    // Payload: [ReadingType.SPO2 (3), Action.START (1)]
     return createPacket(
       command: cmdHeartRateMeasurement,
       data: [0x03, 0x01],
     );
   }
 
-  static Uint8List stopSpo2() {
-    // Reverting to 0x00
+  // Reference: disableSpO2Monitoring (hex: '2c0200')
+  static List<Uint8List> stopSpo2() {
+    return [
+      createPacket(command: 0x2C, data: [0x02, 0x00]),
+    ];
+  }
+
+  // Reference: disableStressMonitoring (hex: '360200')
+  static Uint8List stopStress() {
     return createPacket(
-      command: cmdHeartRateMeasurement,
-      data: [0x03, 0x00],
+      command: 0x36,
+      data: [0x02, 0x00],
     );
+  }
+
+  static Uint8List reboot() {
+    return createPacket(command: 0x08);
   }
 
   static const int cmdGetSteps = 0x43; // 67 decimal
@@ -123,7 +140,30 @@ class PacketFactory {
     // Steps uses: [Offset, 0x0f, 0x00, 0x60, 0x00]
     // We try the same structure for SpO2. Count 0x60 (96) covers 24h of 15-min blocks.
     // If SpO2 is sparse, this might just request "a day's buffer".
-    List<int> data = [dayOffset, 0x0f, 0x00, 0x60, 0x00];
+    // Using 0x03 as Key (SpO2 Type) instead of 0x0F
+    List<int> data = [dayOffset, 0x03, 0x00, 0x60, 0x00];
     return createPacket(command: cmdGetSpo2Log, data: data);
+  }
+
+  // Raw Sensor Data Commands
+  static const int cmdRawData = 0xA1;
+  static const int subCmdEnableRaw = 0x04;
+  static const int subCmdDisableRaw = 0x02;
+
+  static Uint8List enableRawDataPacket() {
+    return createPacket(command: cmdRawData, data: [subCmdEnableRaw]);
+  }
+
+  static Uint8List disableRawDataPacket() {
+    return createPacket(command: cmdRawData, data: [subCmdDisableRaw]);
+  }
+
+  // SpO2 History Sync (Alternative 0xBC)
+  static const int cmdSyncSpo2HistoryNew = 0xBC;
+  static const int subCmdSyncSpo2 = 0x2A;
+
+  static Uint8List getSpo2LogPacketNew() {
+    // 0xBC 0x2A ...
+    return createPacket(command: cmdSyncSpo2HistoryNew, data: [subCmdSyncSpo2]);
   }
 }

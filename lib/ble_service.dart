@@ -253,6 +253,15 @@ class BleService extends ChangeNotifier {
   int _spo2LogBaseTime = 0;
   int _spo2LogCount = 0;
 
+  // Sensor Streams
+  final StreamController<List<int>> _accelStreamController =
+      StreamController<List<int>>.broadcast();
+  Stream<List<int>> get accelStream => _accelStreamController.stream;
+
+  final StreamController<List<int>> _ppgStreamController =
+      StreamController<List<int>>.broadcast();
+  Stream<List<int>> get ppgStream => _ppgStreamController.stream;
+
   void _onDataReceived(List<int> data) {
     if (data.isEmpty) return;
 
@@ -267,6 +276,21 @@ class BleService extends ChangeNotifier {
     if (data.length > 1) {
       int cmd = data[0];
       int dataOffset = 1;
+
+      if (cmd == 0xA1 && data.length > 2) {
+        // Raw Sensor Data
+        // Subtypes: 0x03=Accel, 0x01=SpO2 Raw, 0x02=PPG Raw
+        int subType = data[1];
+        if (subType == 0x03) {
+          // Accelerometer
+          // Forward entire packet to stream for now
+          _accelStreamController.add(data);
+        } else if (subType == 0x01 || subType == 0x02) {
+          // PPG/SpO2 Raw
+          _ppgStreamController.add(data);
+        }
+        return; // Skip other checks
+      }
 
       if (cmd == 0xA1 && data.length > 2) {
         cmd = data[1];
@@ -293,22 +317,30 @@ class BleService extends ChangeNotifier {
           // If data is [0x69, 0x01, HR], value is at index 2.
 
           // Let's rely on observation or try generic offset
-          // Previous code: int valueIndex = 3 + (dataOffset - 1);
-          // If dataOffset=1, valIndex=3. data[3]?
-
           // Let's make it more robust.
           // If data=[0x69, 0x01, 0x48, ...], HR=72.
-          if (data.length > dataOffset + 1) {
-            _heartRate = data[
-                dataOffset + 1]; // This seems more likely for [Type, Value]
-            notifyListeners();
-          }
+          if (data.length > dataOffset + 2) {
+            // Observed format: 69 01 00 [HR] ...
+            // Index 2 (dataOffset+1) is often 0 (Status?)
+            // Index 3 (dataOffset+2) contains the value
+            int val = data[dataOffset + 2];
 
-          if (_isMeasuringHeartRate) {
-            debugPrint("HR Received - Auto-stopping (One-Shot)");
-            _isMeasuringHeartRate = false;
-            _hrTimer?.cancel();
-            notifyListeners();
+            // Fallback: Check index 2 if index 3 is 0, just in case
+            if (val == 0) val = data[dataOffset + 1];
+
+            if (val > 0) {
+              _heartRate = val;
+              notifyListeners();
+
+              if (_isMeasuringHeartRate) {
+                debugPrint(
+                    "HR Received ($val) - Auto-stopping (Standard Method)");
+                // Try standard stop first now that the conflict is resolved
+                stopHeartRate();
+              }
+            } else {
+              debugPrint("HR ACK/Status (0) - Waiting for measurement...");
+            }
           }
         } else if (subType == 0x03) {
           // SpO2
@@ -350,6 +382,14 @@ class BleService extends ChangeNotifier {
             _spo2Timer = null;
           }
         }
+      }
+
+      // SpO2 Log New (0xBC)
+      if (cmd == PacketFactory.cmdSyncSpo2HistoryNew) {
+        // Should behave like 0x16 or similar
+        debugPrint("Received 0xBC SpO2 Log Packet: $hexData");
+        // For now just log it, we need to see the structure to parse it
+        // But it likely follows the same 0x16 or 0x15 structure
       }
 
       // SpO2 Log (0x16)
@@ -665,19 +705,20 @@ class BleService extends ChangeNotifier {
     _spo2Timer?.cancel();
     notifyListeners();
     try {
-      // Send SpO2 Stop
-      List<int> p1 = PacketFactory.stopSpo2();
-      addToProtocolLog(
-          p1.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ') +
-              " (Stop SpO2)",
-          isTx: true);
-      await _writeChar!.write(p1);
+      // Send SpO2 Stop Packets
+      List<Uint8List> packets = PacketFactory.stopSpo2();
+      for (var packet in packets) {
+        addToProtocolLog(
+            "${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Stop SpO2)",
+            isTx: true);
+        await _writeChar!.write(packet);
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
 
       // Also send Heart Rate Stop (as a "Master Stop")
-      List<int> p2 = PacketFactory.stopHeartRate();
+      Uint8List p2 = PacketFactory.stopHeartRate();
       addToProtocolLog(
-          p2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ') +
-              " (Stop HR-Master)",
+          "${p2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Stop HR-Master)",
           isTx: true);
       await _writeChar!.write(p2);
     } catch (e) {
@@ -800,18 +841,87 @@ class BleService extends ChangeNotifier {
           DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
       debugPrint("Requesting SpO2 History for: $startOfDay");
 
-      // Calculate offset from today (0 = today, 1 = yesterday etc? Or negative?)
-      // Steps usually uses positive offset for "daysAgo".
-      // offset = (Today - Selected).inDays
       final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      int offset = today.difference(startOfDay).inDays;
-      if (offset < 0) offset = 0; // Future dates not allowed
+      final difference = now.difference(_selectedDate).inDays;
+      int offset = difference < 0 ? 0 : difference;
 
       await _writeChar!
           .write(PacketFactory.getSpo2LogPacket(dayOffset: offset));
+
+      // Also try the new sync command (0xBC)
+      await Future.delayed(const Duration(milliseconds: 500));
+      debugPrint("Requesting SpO2 History (New Protocol 0xBC)...");
+      await _writeChar!.write(PacketFactory.getSpo2LogPacketNew());
     } catch (e) {
       debugPrint("Error syncing SpO2 history: $e");
+    }
+  }
+
+  Future<void> forceStopEverything() async {
+    if (_writeChar == null) return;
+    debugPrint("Force Stopping: Executing 'Hijack Strategy'...");
+    try {
+      // 1. BURST Disable Raw Data (0xA1 0x02)
+      for (int i = 0; i < 3; i++) {
+        await disableRawData();
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      // 2. HIJACK: Start SpO2 (0x69 0x03 0x01)
+      // The user confirmed starting SpO2 stops the stuck Green Light (HR).
+      // We switch context to SpO2, which we hope to control better.
+      debugPrint("Hijacking with SpO2 start...");
+      await _writeChar!.write(PacketFactory.startSpo2());
+      await Future.delayed(
+          const Duration(milliseconds: 1500)); // Wait for it to take over
+
+      // 3. KILL SpO2 (0x2C 0x02 0x00)
+      // Now we disable the SpO2 monitor we just started.
+      debugPrint("Killing SpO2...");
+      await _writeChar!
+          .write(PacketFactory.createPacket(command: 0x2C, data: [0x02, 0x00]));
+      _isMeasuringSpo2 = false;
+      _spo2Timer?.cancel();
+      notifyListeners();
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // 4. Disable Heart Rate Schedule (0x16 0x02 0x00)
+      // Just to be sure the schedule is clear.
+      await _writeChar!.write(PacketFactory.disableHeartRate());
+      _isMeasuringHeartRate = false;
+      _hrTimer?.cancel();
+      notifyListeners();
+
+      // 5. Disable Stress (0x36 0x02 0x00)
+      await _writeChar!
+          .write(PacketFactory.createPacket(command: 0x36, data: [0x02, 0x00]));
+
+      debugPrint("Hijack Stop Completed.");
+    } catch (e) {
+      debugPrint("Error during Force Stop: $e");
+    }
+  }
+
+  Future<void> rebootRing() async {
+    if (_writeChar == null) return;
+    debugPrint("Rebooting Ring...");
+    try {
+      // Command 0x08 is Reboot
+      await _writeChar!.write(PacketFactory.createPacket(command: 0x08));
+    } catch (e) {
+      debugPrint("Error rebooting: $e");
+    }
+  }
+
+  Future<void> sendRawPacket(List<int> packet) async {
+    if (_writeChar == null) return;
+    try {
+      addToProtocolLog(
+          "${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Manual)",
+          isTx: true);
+      await _writeChar!.write(packet);
+    } catch (e) {
+      debugPrint("Error sending raw packet: $e");
     }
   }
 
@@ -821,6 +931,18 @@ class BleService extends ChangeNotifier {
     await syncHistory();
     await syncHeartRateHistory();
     await syncSpo2History();
+  }
+
+  Future<void> enableRawData() async {
+    if (_writeChar == null) return;
+    debugPrint("Enabling Raw Data Stream...");
+    await _writeChar!.write(PacketFactory.enableRawDataPacket());
+  }
+
+  Future<void> disableRawData() async {
+    if (_writeChar == null) return;
+    debugPrint("Disabling Raw Data Stream...");
+    await _writeChar!.write(PacketFactory.disableRawDataPacket());
   }
 
   void _cleanup() {
