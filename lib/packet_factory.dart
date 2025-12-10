@@ -61,7 +61,11 @@ class PacketFactory {
 
   /// Creates packet to request steps for a specific day offset
   static Uint8List getStepsPacket({int dayOffset = 0}) {
-    List<int> data = [dayOffset, 0x0f, 0x00, 0x5f, 0x01];
+    // 0x01 = Key, 0x00 = Start Index, 0x60 = Count (96 blocks of 15 min = 24h), 0x00
+    // If 0x0F was used before, it might have been an offset or specific key?
+    // Trying 0x01 based on common protocols, or sticking to 0x0F if it's the key.
+    // Let's assume 0x0F is key, 0x00 is start, 0x60 (96) is length.
+    List<int> data = [dayOffset, 0x0f, 0x00, 0x60, 0x00];
     return createPacket(command: cmdGetSteps, data: data);
   }
 
