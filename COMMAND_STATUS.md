@@ -9,15 +9,15 @@
 
 | Feature | Action | HEX Command | Behavior / Notes |
 | :--- | :--- | :--- | :--- |
-| **Heart Rate** | **Start** | `69 01 01` | Starts Green Light (Continuous). |
-| **Heart Rate** | **Disable** | `16 02 00` | **USE TO STOP.** Kills the Green Light process. |
-| **SpO2** | **Start** | `69 03 00` | Starts Red Light (Continuous). |
-| **SpO2** | **Disable** | `2C 02 00` | **USE TO STOP.** Kills the Red Light process. |
-| **Stress** | **Start** | `36 01` | Starts measurement. **NO VISIBLE LIGHT** (IR/Passive). |
-| **Stress** | **Disable** | `36 02` | **USE TO STOP.** Kills the Stress process. |
-| **Raw Data** | **Enable** | `A1 04` | Starts high-frequency Accel + PPG stream. |
-| **Raw Data** | **Disable** | `A1 02` | Stops stream. |
-| **System** | **Reboot** | `08` | **Nuclear Option.** Restarts ring. Useful if sensors freeze. |
+| **Heart Rate** | **Auto Mode** | `16 02 01` | Enable Automatic Monitoring. |
+| **Heart Rate** | **Manual Mode** | `16 02 00` | Disable Automatic / Stop Manual. |
+| **SpO2** | **Auto Mode** | `2C 02 01` | Enable Automatic Monitoring. |
+| **SpO2** | **Manual Mode** | `2C 02 00` | Disable Automatic / Stop Manual. |
+| **Stress** | **Start** | `36 02 01` | **GOLDEN.** Start Measurement. |
+| **Stress** | **Stop** | `36 02 00` | **GOLDEN.** Stop Measurement. |
+| **Raw PPG** | **Stream** | `69 08` | Real-time PPG Waveform Stream. |
+| **Unknown** | **Sensor** | `37 ...` | Likely Blood Pressure or Temp. |
+| **Unknown** | **Sensor** | `39 ...` | Likely Blood Pressure or Temp. |
 
 > **⚠️ CRITICAL: DO NOT USE `0x69` TO STOP!**
 > Sending `69 01 00` (Stop HR) or `69 03 00` (Stop SpO2) actually **RE-TRIGGERS** the measurement.
@@ -60,7 +60,35 @@
 
 ---
 
-## 4. � Future Roadmap (Unimplemented)
+## 4. 💻 Implemented Commands (Found in Codebase)
+
+These commands appear to be implemented and working in the current Flutter project.
+
+| Feature | Action | HEX Command | Behavior / Notes |
+| :--- | :--- | :--- | :--- |
+| **Battery** | **Get Level** | `03` | Response at `data[1]`. |
+| **Steps** | **Sync History** | `43 ...` | Complex 20-byte payload. |
+| **Heart Rate** | **Sync History** | `15 ...` | Timestamp-based history sync. |
+| **SpO2** | **Sync History** | `16 ...` | Timestamp-based history sync. |
+| **System** | **Set Time** | `01 ...` | Time synchronization. |
+
+---
+
+## 5. 🔍 Observed in Logs (Needs Verification)
+
+These commands were found in the provided `btsnoop_hci.log` files.
+
+| Feature | Command | Notes |
+| :--- | :--- | :--- |
+| **State Sync** | `3B 01 ...` | **CONFIRMED.** Returns `3B 01 01 00 01`. Likely heartbeat or app-active signal. |
+| **Unknown** | `02 ...` | `02 04`, `02 05`, `02 06`. Returns `02 00`. |
+| **Handshake?** | `50 55 AA...` | Response `69 0C 01...`. Potential unlock/bond. |
+| **Settings?** | `48 00...` | Response contains `C8` (200). |
+| **Unknown** | `05 ...` | Complex sequence `05 04...`. |
+
+---
+
+## 6. 🔮 Future Roadmap (Unimplemented)
 
 These commands were observed in logs but not yet built.
 

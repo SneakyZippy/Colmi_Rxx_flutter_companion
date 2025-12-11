@@ -463,11 +463,16 @@ class BleService extends ChangeNotifier {
       }
 
       // SpO2 Log New (0xBC)
+      // SpO2 Log New (0xBC)
       if (cmd == PacketFactory.cmdSyncSpo2HistoryNew) {
-        // Should behave like 0x16 or similar
         debugPrint("Received 0xBC SpO2 Log Packet: $hexData");
-        // For now just log it, we need to see the structure to parse it
-        // But it likely follows the same 0x16 or 0x15 structure
+        if (data.length > 1) {
+          int sub = data[1];
+          if (sub == 0xEE)
+            debugPrint("SpO2 (0xBC) Status: EMPTY/End (0xEE)");
+          else
+            debugPrint("SpO2 (0xBC) Subtype: ${sub.toRadixString(16)}");
+        }
       }
 
       // SpO2 Log (0x16)
@@ -623,6 +628,9 @@ class BleService extends ChangeNotifier {
           }
           notifyListeners();
         }
+      } else {
+        // Log Unknown Commands
+        debugPrint("RX UNKNOWN ($cmd): $hexData");
       }
     }
   }
