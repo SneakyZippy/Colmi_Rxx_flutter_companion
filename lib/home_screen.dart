@@ -130,11 +130,46 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 10),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Stress (HRV)',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    Text(
+                      '${ble.stress}',
+                      style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                            color: Colors.purple,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
                     ElevatedButton.icon(
-                      onPressed:
-                          (ble.isMeasuringHeartRate || ble.isMeasuringSpo2)
-                              ? () => ble.stopAllMeasurements()
-                              : null,
+                      onPressed: ble.isMeasuringStress
+                          ? null // Disable while measuring
+                          : () => ble.startStress(),
+                      icon: Icon(
+                        ble.isMeasuringStress
+                            ? Icons.psychology
+                            : Icons.psychology_outlined,
+                      ),
+                      label: Text(
+                        ble.isMeasuringStress
+                            ? 'Measuring Stress...'
+                            : 'Measure Stress',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ble.isMeasuringStress
+                            ? Colors.purple.shade100
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: (ble.isMeasuringHeartRate ||
+                              ble.isMeasuringSpo2 ||
+                              ble.isMeasuringStress)
+                          ? () => ble.stopAllMeasurements()
+                          : null,
                       icon: const Icon(Icons.stop_circle_outlined),
                       label: const Text('STOP ALL MEASUREMENTS'),
                       style: ElevatedButton.styleFrom(

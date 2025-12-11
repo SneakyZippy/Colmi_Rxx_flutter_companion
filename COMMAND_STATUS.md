@@ -1,39 +1,71 @@
-# 💍 Colmi Ring Command Status
+# 💍 Colmi Ring R02 - Protocol Reference & Knowledge Base
 
-## ✅ Verified Working
-These commands behave exactly as expected.
-
-| Feature | Command (HEX) | Description | Notes |
-| :--- | :--- | :--- | :--- |
-| **Reboot** | `08` | **System Reboot** | 🛑 **Best Kill Switch**. Stops all lights/sensors immediately. |
-| **Heart Rate** | `69 01 01` | **Start HR** | Starts Green Light. |
-| **Raw Data** | `A1 04` | **Enable Raw** | Starts streaming (Green+Red+Accel). |
-| **Raw Data** | `A1 02` | **Disable Raw** | Stops streaming data packets. |
+**Last Updated:** 2025-12-11
+**Status:** Working
 
 ---
 
-## ⚠️ Ambiguous / Triggers
-These commands were thought to be "Stop" but appear to **Start** or **Re-trigger** the sensors.
+## 1. ✅ Verified Commands (Control)
 
-| Feature | Command (HEX) | Description | Issue |
+| Feature | Action | HEX Command | Behavior / Notes |
 | :--- | :--- | :--- | :--- |
-| **Stop HR** | `69 01 00` | **Stop HR??** | 🚨 **TRIGGERS GREEN LIGHT**. Likely "Start with param 0". |
-| **Stop SpO2** | `69 03 00` | **Stop SpO2??** | 🚨 **TRIGGERS RED LIGHT**. Returns `6C` (Running). |
-| **Stop SpO2** | `69 03 FF` | **Stop SpO2??** | Failed. |
+| **Heart Rate** | **Start** | `69 01 01` | Starts Green Light (Continuous). |
+| **Heart Rate** | **Disable** | `16 02 00` | **USE TO STOP.** Kills the Green Light process. |
+| **SpO2** | **Start** | `69 03 00` | Starts Red Light (Continuous). |
+| **SpO2** | **Disable** | `2C 02 00` | **USE TO STOP.** Kills the Red Light process. |
+| **Stress** | **Start** | `36 01` | Starts measurement. **NO VISIBLE LIGHT** (IR/Passive). |
+| **Stress** | **Disable** | `36 02` | **USE TO STOP.** Kills the Stress process. |
+| **Raw Data** | **Enable** | `A1 04` | Starts high-frequency Accel + PPG stream. |
+| **Raw Data** | **Disable** | `A1 02` | Stops stream. |
+| **System** | **Reboot** | `08` | **Nuclear Option.** Restarts ring. Useful if sensors freeze. |
 
-## 🛑 Limitations
-*   **Active Measurements**: Once a measurement starts (Green or Red light), it **CANNOT** be interrupted by software commands. It must finish its cycle (approx 45s).
-*   **Reboot**: The only way to immediately kill a running light is the **Reboot (0x08)** command.
+> **⚠️ CRITICAL: DO NOT USE `0x69` TO STOP!**
+> Sending `69 01 00` (Stop HR) or `69 03 00` (Stop SpO2) actually **RE-TRIGGERS** the measurement.
+> *Always use the `Disable` commands (`16`, `2C`, `36`) to stop sensors.*
 
-## 🛠️ Passive Disables (Force Stop)
-We are now relying on these to stop the lights without re-triggering them.
+---
 
-| Feature | Command (HEX) | Description | Expected Behavior |
+## 2. 📊 Data Parsing (RX)
+
+| Feature | Packet Header | Value Byte | Expected Behavior |
 | :--- | :--- | :--- | :--- |
-| **Heart Rate** | `16 02 00` | Disable HR Monitor | Stops periodic Green Light checks. |
-| **SpO2** | `2C 02 00` | Disable SpO2 Monitor | Stops periodic Red Light checks. |
-| **Stress** | `36 02 00` | Disable Stress Monitor | Disable periodic Stress checks. |
+| **Heart Rate** | `0x69` | `data[4]` | Arrives ~1/sec. Check Index 4. If 0, check Index 2. |
+| **SpO2** | `0x2C`? | `data[?]` | *Needs verification.* Likely similar to HR. |
+| **Stress** | `0x73` | `data[1]` | **DELAYED.** Arrives ~90 seconds after Start. Value at Index 1 (e.g., `0x12` = 18). |
+| **Raw Accel** | `0xA1` | Multiple | High-speed stream. Needs specialized parsing. |
 
-## 📝 Summary
-*   **0x69 commands** seem to **ALWAYS START** the sensor. Do not use them for stopping.
-*   **Force Stop Strategy**: Only send `0x16`, `0x2C`, `0x36`, and `0xA1` disables. If that fails, use **Reboot (0x08)**.
+---
+
+## 3. 🧠 Quirks & Lessons Learned
+
+### The "90-Second Rule" (Stress)
+*   **Symptom:** You press "Measure Stress", logs show "Success", but **nothing happens** for over a minute.
+*   **Reality:** The ring captures HRV data silently (perhaps using invisible IR light) for ~90 seconds. It buffers the calculation and sends a **single** packet (`0x73`) at the end.
+*   **Fix:** Don't time out early. Set safety timers to **120 seconds**.
+
+### The "Ghost Start" (Heart Rate)
+*   **Symptom:** You stop HR, but it immediately starts again (Green light flickers back on).
+*   **Cause:** Using `0x69 [Type] 0x00` deals with "Real-Time Request" logic which the ring interprets as "Start".
+*   **Fix:** Never use 0x69 to stop. Use **0x16** (Periodic Disable) instead.
+
+### Background Interference
+*   **Symptom:** Sensors fail to start (Light stays off) despite valid commands.
+*   **Cause:** Another app (e.g., original "Da Fit" or "Colmi" app) running in background. Service: `NtQueueManager`.
+*   **Fix:** Force Stop / Uninstall other ring apps. **Reboot Phone** to kill zombie BLE services.
+
+### Hardware Freeze
+*   **Symptom:** App sends Start, Ring ACKs, but **no light ever appears**.
+*   **Cause:** Internal firmware state confusion.
+*   **Fix:** Send **Reboot Command `0x08`** or place on charger to reset.
+
+---
+
+## 4. � Future Roadmap (Unimplemented)
+
+These commands were observed in logs but not yet built.
+
+| Feature | Command (Decimal) | Hex Est. | Description |
+| :--- | :--- | :--- | :--- |
+| **Sleep Data** | `41067` | `A0 6B ...` | Syncs sleep history. |
+| **Activity** | `41081` | `A0 79 ...` | Syncs daily steps/cal scores. |
+| **Battery** | `?` | `?` | Need to find the "Get Battery" command. |

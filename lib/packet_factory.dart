@@ -86,6 +86,22 @@ class PacketFactory {
     );
   }
 
+  static Uint8List startStress() {
+    // 0x36 0x01 - Start Stress Measurement (Assumed)
+    return createPacket(
+      command: 0x36,
+      data: [0x01, 0x00],
+    );
+  }
+
+  static Uint8List stopRealTimeSpo2() {
+    // 0x69 0x03 0x00 - Stop Real-time SpO2 Logic
+    return createPacket(
+      command: cmdHeartRateMeasurement,
+      data: [0x03, 0x00],
+    );
+  }
+
   static Uint8List reboot() {
     return createPacket(command: 0x08);
   }

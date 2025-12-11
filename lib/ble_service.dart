@@ -31,6 +31,9 @@ class BleService extends ChangeNotifier {
   int _spo2 = 0;
   int get spo2 => _spo2;
 
+  int _stress = 0;
+  int get stress => _stress;
+
   String _status = "Disconnected";
   String get status => _status;
 
@@ -240,8 +243,17 @@ class BleService extends ChangeNotifier {
   bool _isMeasuringSpo2 = false;
   bool get isMeasuringSpo2 => _isMeasuringSpo2;
 
-  Timer? _hrTimer;
-  Timer? _spo2Timer;
+  bool _isMeasuringStress = false;
+  bool get isMeasuringStress => _isMeasuringStress;
+
+  Timer? _hrTimer; // Safety max duration (45s)
+  Timer? _hrDataTimer; // Silence detector (3s)
+
+  Timer? _spo2Timer; // Safety max duration
+  Timer? _spo2DataTimer; // Silence detector
+
+  Timer? _stressTimer; // Safety max duration
+  Timer? _stressDataTimer; // Silence detector
 
   // HR History Parser State
   int _hrLogInterval = 5; // Default 5 mins
@@ -333,10 +345,16 @@ class BleService extends ChangeNotifier {
               notifyListeners();
 
               if (_isMeasuringHeartRate) {
-                debugPrint(
-                    "HR Received ($val) - Auto-stopping (Standard Method)");
-                // Try standard stop first now that the conflict is resolved
-                stopHeartRate();
+                debugPrint("HR Received ($val) - Continuous Mode");
+
+                // Reset Silence Timer
+                _hrDataTimer?.cancel();
+                _hrDataTimer = Timer(const Duration(seconds: 3), () {
+                  if (_isMeasuringHeartRate) {
+                    debugPrint("HR Silence Detected - Resetting State");
+                    stopHeartRate();
+                  }
+                });
               }
             } else {
               debugPrint("HR ACK/Status (0) - Waiting for measurement...");
@@ -371,15 +389,75 @@ class BleService extends ChangeNotifier {
             _spo2History.sort((a, b) => a.x.compareTo(b.x));
 
             notifyListeners();
+
+            if (_isMeasuringSpo2) {
+              debugPrint("SpO2 Received ($val) - Auto-stopping");
+              stopSpo2();
+            }
           } else {
             _lastLog = "SpO2 Zero Val";
             notifyListeners();
+
+            // Even if zero, if we get packets, it's alive.
+            if (_isMeasuringSpo2) {
+              _spo2DataTimer?.cancel();
+              _spo2DataTimer = Timer(const Duration(seconds: 3), () {
+                if (_isMeasuringSpo2) {
+                  debugPrint("SpO2 Silence Detected - Resetting State");
+                  stopSpo2();
+                }
+              });
+            }
           }
 
           // Cancel timer if we got value
           if (val > 0) {
             _spo2Timer?.cancel();
             _spo2Timer = null;
+          }
+        }
+      }
+
+      // Stress Measurement (0x36)
+      // Stress Measurement (0x36 start -> 0x73 value?)
+      if (cmd == 0x36 || cmd == 0x73) {
+        // If 0x36: Start/Stop ACKs
+        if (cmd == 0x36) {
+          if (data.length > 1 && data[1] == 0x02) {
+            debugPrint("Stress Stop ACK - Ignore");
+            return;
+          }
+          debugPrint("Stress Start ACK");
+        }
+
+        // If 0x73: Data Packet
+        if (cmd == 0x73 && data.length > 2) {
+          final hex =
+              data.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ');
+          debugPrint("Stress Raw Packet (0x73): $hex");
+
+          // Hypothesis: Index 1 is Stress? (0x0C = 12?)
+          // Or Index 4?
+          int val = data[1];
+          if (val == 0 && data.length > 4) val = data[4];
+
+          // Accept 0 if it's a valid packet for debug?
+          // But usually Stress > 0.
+          if (val > 0) {
+            _stress = val;
+            notifyListeners();
+            debugPrint("Stress Calculated: $val");
+
+            if (_isMeasuringStress) {
+              // Silence Timer
+              _stressDataTimer?.cancel();
+              _stressDataTimer = Timer(const Duration(seconds: 3), () {
+                if (_isMeasuringStress) {
+                  debugPrint("Stress Silence Detected - Resetting State");
+                  stopStress();
+                }
+              });
+            }
           }
         }
       }
@@ -627,7 +705,7 @@ class BleService extends ChangeNotifier {
       await _writeChar!.write(packet);
       debugPrint("Sent Single HR Request");
 
-      // Schedule Timeout Safety
+      // Schedule Timeout Safety (Max Duration)
       _hrTimer?.cancel();
       _hrTimer = Timer(const Duration(seconds: 45), () {
         if (_isMeasuringHeartRate) {
@@ -645,18 +723,23 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> stopHeartRate() async {
-    if (_writeChar == null) return;
-
-    _isMeasuringHeartRate = false;
+    // Immediate cleanup
     _hrTimer?.cancel();
+    _hrDataTimer?.cancel();
+    _isMeasuringHeartRate = false;
     notifyListeners();
 
+    if (_writeChar == null) return;
+
     try {
-      List<int> packet = PacketFactory.stopHeartRate();
-      final hex =
-          packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-      addToProtocolLog(hex + " (Stop HR)", isTx: true);
-      await _writeChar!.write(packet);
+      // 1. Disable Periodic Monitoring (Ensure LED off)
+      // Note: We used to send 0x69 0x01 0x00 here, but that seems to RE-START the sensor!
+      // So we ONLY send the Disable command (0x16 0x02).
+
+      List<int> p2 = PacketFactory.disableHeartRate();
+      final hex2 = p2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      addToProtocolLog(hex2 + " (Disable HR)", isTx: true);
+      await _writeChar!.write(p2);
     } catch (e) {
       debugPrint("Error sending stop HR: $e");
     }
@@ -703,13 +786,24 @@ class BleService extends ChangeNotifier {
     if (_writeChar == null) return;
     _isMeasuringSpo2 = false;
     _spo2Timer?.cancel();
+    _spo2DataTimer?.cancel();
     notifyListeners();
     try {
       // Send SpO2 Stop Packets
+      // 1. Stop Real-Time Measurement (New Standard)
+      Uint8List p1 = PacketFactory.stopRealTimeSpo2();
+      addToProtocolLog(
+          "${p1.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Stop SpO2-RT)",
+          isTx: true);
+      await _writeChar!.write(p1);
+
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // 2. Disable Periodic (Old Method, just in case)
       List<Uint8List> packets = PacketFactory.stopSpo2();
       for (var packet in packets) {
         addToProtocolLog(
-            "${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Stop SpO2)",
+            "${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Disable SpO2)",
             isTx: true);
         await _writeChar!.write(packet);
         await Future.delayed(const Duration(milliseconds: 100));
@@ -730,6 +824,54 @@ class BleService extends ChangeNotifier {
     debugPrint("Stopping ALL measurements");
     if (_isMeasuringHeartRate) await stopHeartRate();
     if (_isMeasuringSpo2) await stopSpo2();
+    if (_isMeasuringStress) await stopStress();
+  }
+
+  Future<void> startStress() async {
+    if (_writeChar == null) return;
+
+    // Mutual Exclusion
+    if (_isMeasuringHeartRate) await stopHeartRate();
+    if (_isMeasuringSpo2) await stopSpo2();
+
+    try {
+      _isMeasuringStress = true;
+      notifyListeners();
+
+      List<int> packet = PacketFactory.startStress();
+      addToProtocolLog("TX: 36 01 ... (Start Stress)", isTx: true);
+      await _writeChar!.write(packet);
+
+      // Safety Timer (120s - HRV takes time)
+      _stressTimer?.cancel();
+      _stressTimer = Timer(const Duration(seconds: 120), () {
+        if (_isMeasuringStress) {
+          debugPrint("Stress Timeout - Force Stopping");
+          stopStress();
+        }
+      });
+    } catch (e) {
+      debugPrint("Error starting Stress: $e");
+      _isMeasuringStress = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopStress() async {
+    // Immediate cleanup
+    _stressTimer?.cancel();
+    _stressDataTimer?.cancel();
+    _isMeasuringStress = false;
+    notifyListeners();
+
+    if (_writeChar == null) return;
+
+    try {
+      await _writeChar!.write(PacketFactory.stopStress());
+      addToProtocolLog("TX: 36 02 ... (Stop Stress)", isTx: true);
+    } catch (e) {
+      debugPrint("Error stopping Stress: $e");
+    }
   }
 
   int _intToBcd(int b) {
