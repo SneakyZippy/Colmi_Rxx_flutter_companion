@@ -62,8 +62,28 @@ Future<void> parseBtsnoop(String path) async {
     offset += 4;
     int drops = data.getUint32(offset, Endian.big);
     offset += 4;
-    // Time
+    // Time (8 bytes, signed 64-bit, microseconds since 0 AD)
+    int tsHigh = data.getUint32(offset, Endian.big);
+    int tsLow = data.getUint32(offset + 4, Endian.big);
     offset += 8;
+
+    // Convert to microseconds (approximate, since we can't easily do 64-bit logic cleanly in basic Dart without BigInt or care)
+    // Actually, BigInt is fine.
+    int micros = (tsHigh * 4294967296) +
+        tsLow; // This might lose precision if int is not 64-bit? Dart int is 64-bit on VM.
+
+    // Offset for 1970 is roughly 62135596800 seconds * 1000 * 1000
+    // let's use a constant. 0x00dcddb30f2f8000 is the offset in some tools.
+    // 1970-01-01 is 62135596800000000 microseconds from year 0.
+
+    int epochMicros = micros -
+        62135625600000000; // Adjusted for timezone roughly? Or just use raw.
+    // Let's just print the raw value or a simple adjustment.
+    // Actually, simple way: DateTime.fromMicrosecondsSinceEpoch(epochMicros)
+
+    DateTime dt =
+        DateTime.fromMicrosecondsSinceEpoch(epochMicros, isUtc: true).toLocal();
+    String timeStr = "${dt.hour}:${dt.minute}:${dt.second}";
 
     // Packet Data
     if (offset + incLen > data.lengthInBytes) break;
@@ -71,6 +91,17 @@ Future<void> parseBtsnoop(String path) async {
     Uint8List packetData = bytes.sublist(offset, offset + incLen);
     offset += incLen;
     packetCount++;
+
+    if (packetCount < 5) {
+      print("DEBUG PACKET #$packetCount TIME: $timeStr");
+    }
+
+    // RAW DUMP MINUTE 54 (Early)
+    if (dt.hour == 14 && dt.minute == 54 && packetCount < 880) {
+      String rawHex =
+          packetData.map((b) => b.toRadixString(16).padLeft(2, '0')).join("");
+      print("RAW #$packetCount [$timeStr] : $rawHex");
+    }
 
     if (packetData.isEmpty) continue;
 
@@ -97,6 +128,16 @@ Future<void> parseBtsnoop(String path) async {
       int l2capCid =
           packetData[l2capOffset + 2] | (packetData[l2capOffset + 3] << 8);
 
+      // DEBUG: Print all types for minute 53 to see what we are missing
+      DateTime dtDebug = DateTime.fromMicrosecondsSinceEpoch(
+              (micros - 62135625600000000),
+              isUtc: true)
+          .toLocal();
+      if (dtDebug.hour == 14 && dtDebug.minute == 53) {
+        print(
+            "DEBUG: Pkt #$packetCount Time:${dtDebug.minute}:${dtDebug.second} Type:$type CID:0x${l2capCid.toRadixString(16)} Len:$l2capLen");
+      }
+
       if (l2capCid == 0x04) {
         // ATT
         int attOffset = l2capOffset + 4;
@@ -121,7 +162,20 @@ Future<void> parseBtsnoop(String path) async {
           relevant = true;
         }
 
-        if (relevant) {
+        // Bypass filter for minute 53 deep dive
+        if (dt.hour == 14 && dt.minute == 53) {
+          int attHandle = 0;
+          String hex = "";
+          if (attData.length >= 3) {
+            attHandle = attData[1] | (attData[2] << 8);
+            hex = attData
+                .sublist(3)
+                .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+                .join("");
+          }
+          print(
+              "[$timeStr] #$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex (Op:0x${opcode.toRadixString(16)})");
+        } else if (relevant) {
           // Handle is next 2 bytes
           if (attData.length >= 3) {
             int attHandle = attData[1] | (attData[2] << 8);
@@ -130,9 +184,14 @@ Future<void> parseBtsnoop(String path) async {
                 .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
                 .join("");
 
-            // Filter useless/short packets if needed, or show all
-            print(
-                "#$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex");
+            // Filter by time: 14:53 minute
+            if (dt.hour == 14 && dt.minute == 53) {
+              // Print ALL WriteReqs to see what we missed
+              if (opcode == 0x12 || opcode == 0x52) {
+                print(
+                    "[$timeStr] #$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex");
+              }
+            }
           }
         }
       }

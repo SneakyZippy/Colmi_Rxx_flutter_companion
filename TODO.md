@@ -17,7 +17,7 @@
 
 ## 🚨 High Priority (Critical)
 - [x] **Data Reset Bug:** Fix issue where Steps and HR data resets incorrectly after midnight (00:00) or when staying up late.
-- [x] **History Sync:** Implement logic to download saved sleep/heart rate data from the ring's flash memory.
+- [ ] **History Sync:** Implement logic to download saved sleep/heart rate data from the ring's flash memory.
 - [ ] **Local Database:** Set up `hive` or `sqflite` to persist downloaded data so it remains available after closing the app.
 - [ ] **SpO2 Monitoring:** Basic measurement and history sync implemented. (Visualization pending).
 

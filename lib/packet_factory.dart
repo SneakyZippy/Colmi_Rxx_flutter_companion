@@ -3,8 +3,6 @@ import 'dart:typed_data';
 class PacketFactory {
   // Command Constants
   static const int cmdHeartRateMeasurement = 0x69; // 105 in decimal
-  static const int cmdSetTime =
-      0x01; // Example for Time Sync, need to confirm header/cmd structure
 
   // Headers
   // Protocol: Command + Data (14 bytes) + Checksum
@@ -55,10 +53,34 @@ class PacketFactory {
     );
   }
 
+  static Uint8List enableHeartRate() {
+    // 0x16 0x02 0x01 - Enable Periodic Monitoring
+    return createPacket(
+      command: 0x16,
+      data: [0x02, 0x01],
+    );
+  }
+
   static Uint8List disableHeartRate() {
     // 0x16 0x02 0x00 - Disable Periodic Monitoring
     return createPacket(
       command: 0x16,
+      data: [0x02, 0x00],
+    );
+  }
+
+  static Uint8List enableSpo2() {
+    // 0x2C 0x02 0x01 - Enable Periodic Monitoring
+    return createPacket(
+      command: 0x2C,
+      data: [0x02, 0x01],
+    );
+  }
+
+  static Uint8List disableSpo2() {
+    // 0x2C 0x02 0x00 - Disable Periodic Monitoring
+    return createPacket(
+      command: 0x2C,
       data: [0x02, 0x00],
     );
   }
@@ -87,10 +109,11 @@ class PacketFactory {
   }
 
   static Uint8List startStress() {
-    // 0x36 0x01 - Start Stress Measurement (Assumed)
+    // 0x36 0x02 0x01 - Start Stress Measurement (Verified Golden Log)
+    // Note: 0x36 0x02 seems to be the "Config/Control" subcommand grouping
     return createPacket(
       command: 0x36,
-      data: [0x01, 0x00],
+      data: [0x02, 0x01],
     );
   }
 
@@ -148,6 +171,65 @@ class PacketFactory {
     return createPacket(command: cmdGetHeartRateLog, data: data);
   }
 
+  // Binding / Pairing Commands
+  static const int cmdBind = 0x48;
+  static const int cmdConfig = 0x39; // or UserInfo/Settings
+
+  static Uint8List createBindRequest() {
+    // 0x48 00 ...
+    return createPacket(command: cmdBind, data: [0x00]);
+  }
+
+  static Uint8List createConfigInit() {
+    // 0x39 05 ...
+    return createPacket(command: cmdConfig, data: [0x05]);
+  }
+
+  // Gadgetbridge Commands
+  static const int cmdSetTime = 0x01;
+  static const int cmdBattery = 0x03;
+  static const int cmdPhoneName = 0x04;
+  static const int cmdPreferences = 0x0A;
+
+  /// Creates packet to set time (0x01 YY MM DD HH MM SS) - No 0x00 prefix!
+  static Uint8List createSetTimePacket() {
+    final now = DateTime.now();
+    int y = now.year % 100;
+    int m = now.month;
+    int d = now.day;
+    int h = now.hour;
+    int min = now.minute;
+    int s = now.second;
+    return createPacket(command: cmdSetTime, data: [y, m, d, h, min, s]);
+  }
+
+  /// Creates packet to set Phone Name (0x04 02 0A ...)
+  static Uint8List createSetPhoneNamePacket() {
+    // 0x04 + 0x02(Major) + 0x0A(Minor) + 'G' 'B' (Gadgetbridge)
+    // We'll use 'F' 'L' for Flutter just to be cool, or stick to 'G' 'B' if it matters.
+    // Let's use 'G' 'B' first to match Gadgetbridge exactly.
+    return createPacket(command: cmdPhoneName, data: [0x02, 0x0A, 0x47, 0x42]);
+  }
+
+  /// Creates packet to set User Preferences (0x0A 02 ...)
+  /// Replaces the old 0x39 sequence.
+  static Uint8List createUserProfilePacket() {
+    // 0x0A + 0x02 (Write) + 0x00(24h) + 0x00(Metric) + 0x00(Male) + Age(30) + H(175) + W(70) + 00 00 00
+    // Using default dummy values for now: Male, 30yo, 175cm, 70kg.
+    return createPacket(command: cmdPreferences, data: [
+      0x02, // Write
+      0x00, // 24h
+      0x00, // Metric
+      0x00, // Gender: Male
+      30, // Age
+      175, // Height (cm)
+      70, // Weight (kg)
+      0x00, // Sys BP
+      0x00, // Dia BP
+      0x00 // HR Alarm
+    ]);
+  }
+
   /// Creates packet to request SpO2 Log
   /// [dayOffset] - 0 for today. Structure same as Steps (0x43).
   static Uint8List getSpo2LogPacket({int dayOffset = 0}) {
@@ -181,5 +263,34 @@ class PacketFactory {
   static Uint8List getSpo2LogPacketNew() {
     // 0xBC 0x2A ...
     return createPacket(command: cmdSyncSpo2HistoryNew, data: [subCmdSyncSpo2]);
+  }
+
+  // Stress History Sync (0x37)
+  static const int cmdSyncStress = 0x37;
+
+  static Uint8List getStressHistoryPacket({int packetIndex = 0}) {
+    // Gadgetbridge sends 0x37 [PacketIndex]
+    // 0x00 is the first packet.
+    return createPacket(command: cmdSyncStress, data: [packetIndex]);
+  }
+
+  // Raw PPG Stream (Green Light High Frequency)
+  // Found in Golden Log: 69 08 ...
+  static Uint8List startRawPPG() {
+    return createPacket(
+      command: cmdHeartRateMeasurement, // 0x69
+      data: [
+        0x08,
+        0x25
+      ], // 0x25 seen in log #1863, might be specific sensor config
+      // Or just 0x08? Log showed: 69 08 25 ...
+      // Let's try [0x08, 0x25] first, if fail try [0x08]
+    );
+  }
+
+  static Uint8List stopRawPPG() {
+    // No explicit stop seen in log (it naturally timed out or used the generic disable?)
+    // We will try sending the standard HR Disable: 16 02 00
+    return disableHeartRate();
   }
 }

@@ -16,8 +16,8 @@
 | **Stress** | **Start** | `36 02 01` | **GOLDEN.** Start Measurement. |
 | **Stress** | **Stop** | `36 02 00` | **GOLDEN.** Stop Measurement. |
 | **Raw PPG** | **Stream** | `69 08` | Real-time PPG Waveform Stream. |
-| **Unknown** | **Sensor** | `37 ...` | Likely Blood Pressure or Temp. |
-| **Unknown** | **Sensor** | `39 ...` | Likely Blood Pressure or Temp. |
+| **Config** | **Init** | `39 05` | Sent during pairing/binding. |
+| **Binding** | **Request** | `48 00` | Bind Request/Check. Response `48 00 01` = Bound. |
 
 > **⚠️ CRITICAL: DO NOT USE `0x69` TO STOP!**
 > Sending `69 01 00` (Stop HR) or `69 03 00` (Stop SpO2) actually **RE-TRIGGERS** the measurement.
@@ -60,40 +60,47 @@
 
 ---
 
-## 4. 💻 Implemented Commands (Found in Codebase)
+## 4. 🧩 Verified Gadgetbridge Protocol Details
 
-These commands appear to be implemented and working in the current Flutter project.
+Based on `ColmiR0xConstants.java` and `ColmiR0xPacketHandler.java`:
 
-| Feature | Action | HEX Command | Behavior / Notes |
+### Control Commands
+| Command | Name | Sub-Ops / Payload | Notes |
 | :--- | :--- | :--- | :--- |
-| **Battery** | **Get Level** | `03` | Response at `data[1]`. |
-| **Steps** | **Sync History** | `43 ...` | Complex 20-byte payload. |
-| **Heart Rate** | **Sync History** | `15 ...` | Timestamp-based history sync. |
-| **SpO2** | **Sync History** | `16 ...` | Timestamp-based history sync. |
-| **System** | **Set Time** | `01 ...` | Time synchronization. |
+| **0x01** | Set Time | `YY MM DD HH MM SS` | `YY` is offset from 2000. |
+| **0x03** | Get Battery | `03` | Response: `03 [Level] [ChargingState]` |
+| **0x04** | Set Phone Name | `04 02 0A [NameBytes...]` | Used for initialization. |
+| **0x0A** | User Settings | `0A 02 [Prefs...]` | Gender, Age, Height, Weight, BP, HR Alarm. |
+| **0x08** | Power Off | `08 01` | Shuts down the ring. |
+| **0x21** | Set Goals | `Step(4) Cal(4) Dist(4) Sport(2) Sleep(2)` | Little Endian integers. |
+| **0x50** | Find Device | `50 55 AA` | Vibrates/Flashes ring. |
+
+### Auto-Monitoring / Config (0x16, 0x2C, 0x36)
+Structure: `[Cmd] [Op] [Enable] [Interval?]`
+*   **Op Codes:** `0x01` (Read?), `0x02` (Write).
+*   **Enable:** `0x00` (Disable), `0x01` (Enable).
+*   **0x16 (HR):** Payload includes Interval (mins).
+*   **0x2C (SpO2)** & **0x36 (Stress):** Simple Enable/Disable.
+
+### Data Sync Commands
+| Command | Data Type | Sub-Type | Notes |
+| :--- | :--- | :--- | :--- |
+| **0x43** | Activity History | - | **VERIFIED.** Samples every 15 mins. Byte 4 is `QuarterOfDay` index (0-95). |
+| **0x37** | Stress History | - | **VERIFIED.** **NOT Set Time.** Returns history. **Quirk:** Packet 1 starts at Index 3, others at Index 2. |
+| **0x15** | HR History | - | **VERIFIED.** Returns HR samples. |
+| **0xBC** | Big Data V2 | `0x27` (Sleep) | Sleep Stages (Light/Deep/Awake). |
+| **0xBC** | Big Data V2 | `0x2A` (SpO2) | **VERIFIED.** SpO2 History samples. |
+
+### Notifications (0x73)
+Server-initiated updates arriving on Notify Characteristic.
+*   `73 01`: New HR Data Available.
+*   `73 03`: New SpO2 Data Available.
+*   `73 04`: New Steps Data Available.
+*   `73 0C`: Battery Level Update.
+*   `73 12`: Live Activity Update.
 
 ---
 
-## 5. 🔍 Observed in Logs (Needs Verification)
-
-These commands were found in the provided `btsnoop_hci.log` files.
-
-| Feature | Command | Notes |
-| :--- | :--- | :--- |
-| **State Sync** | `3B 01 ...` | **CONFIRMED.** Returns `3B 01 01 00 01`. Likely heartbeat or app-active signal. |
-| **Unknown** | `02 ...` | `02 04`, `02 05`, `02 06`. Returns `02 00`. |
-| **Handshake?** | `50 55 AA...` | Response `69 0C 01...`. Potential unlock/bond. |
-| **Settings?** | `48 00...` | Response contains `C8` (200). |
-| **Unknown** | `05 ...` | Complex sequence `05 04...`. |
-
----
-
-## 6. 🔮 Future Roadmap (Unimplemented)
-
-These commands were observed in logs but not yet built.
-
-| Feature | Command (Decimal) | Hex Est. | Description |
-| :--- | :--- | :--- | :--- |
-| **Sleep Data** | `41067` | `A0 6B ...` | Syncs sleep history. |
-| **Activity** | `41081` | `A0 79 ...` | Syncs daily steps/cal scores. |
-| **Battery** | `?` | `?` | Need to find the "Get Battery" command. |
+## 5. 🔮 Missing/Unknown
+*   **0x48**: Explicitly **absent** from Gadgetbridge constants. Likely a factory/debug command or deprecated.
+*   **0x2F**: `CMD_PACKET_SIZE`? Unclear usage.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'ble_service.dart';
 
 class SensorScreen extends StatefulWidget {
@@ -111,13 +112,22 @@ class _SensorScreenState extends State<SensorScreen> {
     });
 
     _ppgSub = _ble.ppgStream.listen((data) {
-      // 0xA1 0x01
-      if (data.length < 4) return;
-      int val = (data[2] << 8) | data[3];
-      if (mounted) {
-        setState(() {
-          _ppgRaw = val;
-        });
+      if (data.isEmpty) return;
+
+      // Case 1: Raw Stream (0xA1 0x01 / 0xA1 0x02) - Old
+      if (data[0] == 0xA1) {
+        if (data.length < 4) return;
+        int val = (data[2] << 8) | data[3];
+        if (mounted) setState(() => _ppgRaw = val);
+      }
+      // Case 2: Green PPG Stream (0x69 0x08) - New Golden
+      else if (data[0] == 0x69) {
+        // Log Packet: 69 08 00 00 00 00 [10 03] ...
+        // Index 6/7 seems to be the first sample.
+        if (data.length >= 8) {
+          int val = data[6] | (data[7] << 8); // Little Endian
+          if (mounted) setState(() => _ppgRaw = val);
+        }
       }
     });
   }
@@ -227,6 +237,108 @@ class _SensorScreenState extends State<SensorScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+
+            // Verified Sensors Header
+            const Text("Verified Sensors (Golden)",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Divider(),
+
+            // Live Metrics for feedback
+            Consumer<BleService>(builder: (context, ble, child) {
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _MiniMetric(
+                      label: "Stress",
+                      value: "${ble.stress}",
+                      color: Colors.purple),
+                  _MiniMetric(
+                      label: "SpO2", value: "${ble.spo2}%", color: Colors.blue),
+                  _MiniMetric(
+                      label: "HR",
+                      value: "${ble.heartRate}",
+                      color: Colors.red),
+                ],
+              );
+            }),
+            const SizedBox(height: 10),
+
+            // New Controls (Golden)
+            const Text("Verified Sensors (Golden)",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Divider(),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return ElevatedButton(
+                    onPressed: () {
+                      if (ble.isMeasuringStress)
+                        ble.stopStress();
+                      else
+                        ble.startStress();
+                    },
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            ble.isMeasuringStress ? Colors.red : Colors.purple),
+                    child: Text(
+                        ble.isMeasuringStress ? "Stop Stress" : "Meas Stress"),
+                  );
+                }),
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return ElevatedButton(
+                    onPressed: () {
+                      if (ble.isMeasuringRawPPG)
+                        ble.stopRawPPG();
+                      else
+                        ble.startRawPPG();
+                    },
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: ble.isMeasuringRawPPG
+                            ? Colors.red
+                            : Colors.green[700]),
+                    child: Text(ble.isMeasuringRawPPG
+                        ? "Stop Green PPG"
+                        : "Start Green PPG"),
+                  );
+                }),
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return ElevatedButton(
+                    onPressed: () {
+                      if (ble.isMeasuringHeartRate)
+                        ble.stopHeartRate();
+                      else
+                        ble.startHeartRate();
+                    },
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: ble.isMeasuringHeartRate
+                            ? Colors.red
+                            : Colors.redAccent),
+                    child:
+                        Text(ble.isMeasuringHeartRate ? "Stop HR" : "Meas HR"),
+                  );
+                }),
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return ElevatedButton(
+                    onPressed: () {
+                      if (ble.isMeasuringSpo2)
+                        ble.stopSpo2();
+                      else
+                        ble.startSpo2();
+                    },
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: ble.isMeasuringSpo2
+                            ? Colors.red
+                            : Colors.blueAccent),
+                    child:
+                        Text(ble.isMeasuringSpo2 ? "Stop SpO2" : "Meas SpO2"),
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 20),
             const SizedBox(height: 20),
 
             // Status Card
@@ -371,6 +483,27 @@ class _SensorScreenState extends State<SensorScreen> {
               style: const TextStyle(fontSize: 18, fontFamily: 'Monospace')),
         ],
       ),
+    );
+  }
+}
+
+class _MiniMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _MiniMetric(
+      {required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value,
+            style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
     );
   }
 }

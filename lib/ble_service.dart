@@ -72,7 +72,8 @@ class BleService extends ChangeNotifier {
     // Check permissions
     await _requestPermissions();
 
-    // Listen to scan results if needed, but we'll trigger scans manually
+    // Load paired devices
+    await loadBondedDevices();
   }
 
   Future<void> _requestPermissions() async {
@@ -88,8 +89,29 @@ class BleService extends ChangeNotifier {
   List<ScanResult> _scanResults = [];
   List<ScanResult> get scanResults => _scanResults;
 
+  List<BluetoothDevice> _bondedDevices = [];
+  List<BluetoothDevice> get bondedDevices => _bondedDevices;
+
+  Future<void> loadBondedDevices() async {
+    try {
+      final devices = await FlutterBluePlus.bondedDevices;
+      _bondedDevices = devices.where((d) {
+        String name = d
+            .platformName; // Note: platformName might be empty if not connected?
+        // Actually bonded devices usually have a name cached by OS.
+        return _targetDeviceNames.any((target) => name.contains(target));
+      }).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error loading bonded devices: $e");
+    }
+  }
+
   Future<void> startScan() async {
     if (_isScanning) return;
+
+    // Refresh paired devices
+    await loadBondedDevices();
 
     // Reset
     _status = "Scanning...";
@@ -225,6 +247,9 @@ class BleService extends ChangeNotifier {
 
     if (_notifyChar != null) {
       try {
+        await _notifySubscription?.cancel();
+        _notifySubscription = null;
+
         await _notifyChar!.setNotifyValue(true);
         _notifySubscription = _notifyChar!.lastValueStream.listen(
           _onDataReceived,
@@ -245,6 +270,9 @@ class BleService extends ChangeNotifier {
 
   bool _isMeasuringStress = false;
   bool get isMeasuringStress => _isMeasuringStress;
+
+  bool _isMeasuringRawPPG = false;
+  bool get isMeasuringRawPPG => _isMeasuringRawPPG;
 
   Timer? _hrTimer; // Safety max duration (45s)
   Timer? _hrDataTimer; // Silence detector (3s)
@@ -415,12 +443,18 @@ class BleService extends ChangeNotifier {
             _spo2Timer?.cancel();
             _spo2Timer = null;
           }
+        } else if (subType == 0x08) {
+          // Raw PPG Stream (69 08)
+          // Data: [69, 08, 00, 00, 00, 00, VAL_LO, VAL_HI...]
+          if (_isMeasuringRawPPG) {
+            _ppgStreamController.add(data);
+          }
         }
+        return;
       }
 
-      // Stress Measurement (0x36)
-      // Stress Measurement (0x36 start -> 0x73 value?)
-      if (cmd == 0x36 || cmd == 0x73) {
+      // Stress Measurement (0x36) & History (0x37)
+      if (cmd == 0x36 || cmd == 0x73 || cmd == PacketFactory.cmdSyncStress) {
         // If 0x36: Start/Stop ACKs
         if (cmd == 0x36) {
           if (data.length > 1 && data[1] == 0x02) {
@@ -430,55 +464,121 @@ class BleService extends ChangeNotifier {
           debugPrint("Stress Start ACK");
         }
 
-        // If 0x73: Data Packet
+        // If 0x73: Real-time Data Packet
         if (cmd == 0x73 && data.length > 2) {
-          final hex =
-              data.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ');
-          debugPrint("Stress Raw Packet (0x73): $hex");
-
-          // Hypothesis: Index 1 is Stress? (0x0C = 12?)
-          // Or Index 4?
           int val = data[1];
-          if (val == 0 && data.length > 4) val = data[4];
+          // Handle specific notification subtypes
+          if (val == 0x01) {
+            debugPrint("RX Notify: New HR Data");
+            return;
+          }
+          if (val == 0x03) {
+            debugPrint("RX Notify: New SpO2 Data");
+            return;
+          }
+          if (val == 0x04) {
+            debugPrint("RX Notify: New Steps Data");
+            return;
+          }
+          if (val == 0x0C) {
+            debugPrint("RX Notify: Battery Level Update");
+            // Could parse battery here too if payload matches
+            return;
+          }
+          if (val == 0x12) {
+            debugPrint("RX Notify: Live Activity");
+            return;
+          }
 
-          // Accept 0 if it's a valid packet for debug?
-          // But usually Stress > 0.
+          // Legacy/Measurement Stress (if it comes as 0x73 with value)
+          if (val == 0 && data.length > 4) val = data[4];
           if (val > 0) {
             _stress = val;
             notifyListeners();
             debugPrint("Stress Calculated: $val");
-
+            // Reset silence timer logic...
             if (_isMeasuringStress) {
-              // Silence Timer
               _stressDataTimer?.cancel();
               _stressDataTimer = Timer(const Duration(seconds: 3), () {
-                if (_isMeasuringStress) {
-                  debugPrint("Stress Silence Detected - Resetting State");
-                  stopStress();
-                }
+                if (_isMeasuringStress) stopStress();
               });
+            }
+          }
+        }
+
+        // If 0x37: History Data
+        if (cmd == PacketFactory.cmdSyncStress) {
+          if (data.length < 2) return;
+          int packetNr = data[1];
+          if (packetNr == 0xFF) {
+            debugPrint("Stress History Sync Complete/Empty");
+            return;
+          }
+
+          // Gadgetbridge Logic:
+          // Packet 1 starts at index 3, others at index 2
+          // Interval is 30 mins
+          int startIndex = (packetNr == 1) ? 3 : 2;
+          int minutesOffset = 0;
+          if (packetNr > 1) {
+            minutesOffset = 12 * 30; // Packet 1 has ~12 values?
+            minutesOffset += (packetNr - 2) * 13 * 30; // Others ~13?
+          }
+
+          debugPrint("Stress History Packet $packetNr (StartIdx: $startIndex)");
+
+          // We won't strictly parse history into a graph yet (no Store),
+          // but we'll log the values to prove it works.
+          for (int i = startIndex; i < data.length - 1; i++) {
+            int val = data[i];
+            if (val > 0) {
+              int minuteOfDay = minutesOffset + (i - startIndex) * 30;
+              int h = minuteOfDay ~/ 60;
+              int m = minuteOfDay % 60;
+              debugPrint("Stress History: $h:$m = $val");
             }
           }
         }
       }
 
-      // SpO2 Log New (0xBC)
-      // SpO2 Log New (0xBC)
-      if (cmd == PacketFactory.cmdSyncSpo2HistoryNew) {
-        debugPrint("Received 0xBC SpO2 Log Packet: $hexData");
+      // Big Data Support (0xBC)
+      if (cmd == 0xBC) {
         if (data.length > 1) {
           int sub = data[1];
           if (sub == 0xEE)
-            debugPrint("SpO2 (0xBC) Status: EMPTY/End (0xEE)");
-          else
-            debugPrint("SpO2 (0xBC) Subtype: ${sub.toRadixString(16)}");
+            debugPrint("Big Data (0xBC) Complete/Empty (0xEE)");
+          else if (sub == 0x2A) {
+            // SpO2 History (Gadgetbridge Logic)
+            // Header at bytes 2-3 is length?
+            // Index 6 starts data?
+            // For now, let's just log the raw hex to confirm receipt
+            debugPrint("SpO2 History Packet (0xBC 2A): ${data.sublist(2)}");
+          } else if (sub == 0x27) {
+            debugPrint("Sleep Data Packet (0xBC 27)");
+          } else {
+            debugPrint(
+                "Big Data (0xBC) Unknown Subtype: ${sub.toRadixString(16)}");
+          }
         }
+        return; // Handled
       }
 
-      // SpO2 Log (0x16)
+      // SpO2 Auto Config ACK (0x2C)
+      if (cmd == 0x2C) {
+        debugPrint("SpO2 Auto Config ACK (0x2C)");
+        return; // Handled
+      }
+
+      // SpO2 Log (0x16) or HR Auto Config (0x16)
       if (cmd == PacketFactory.cmdGetSpo2Log) {
         if (data.length < 2) return;
         int subType = data[dataOffset];
+
+        // HR Auto Config ACK usually has subType 0x02 (Config)
+        if (subType == 0x02) {
+          debugPrint("HR Auto Config ACK (0x16 0x02)");
+          return;
+        }
 
         if (subType == 0 || subType == 0xF0) {
           // Start Packet
@@ -529,6 +629,7 @@ class BleService extends ChangeNotifier {
           }
           notifyListeners();
         }
+        return; // Handled 0x16
       }
 
       // Steps History (0x43)
@@ -539,28 +640,47 @@ class BleService extends ChangeNotifier {
           debugPrint("Steps Log Start");
           _stepsHistory.clear();
         } else if (byte1 != 0xFF) {
-          int baseTimeIndex = data[dataOffset + 3]; // e.g. 0, 4, 8...
+          // Gadgetbridge: Byte 3 (dataOffset+3) is "QuarterOfDay" (0-95)
+          int quarterIndex = data[dataOffset + 3];
 
           // Data starts at offset + 8 (index 9)
-          // We assume 4 entries of 2 bytes each (Steps only) to fit in 20 bytes
-          // Layout: [Idx] [Date 4b?] [S0] [S1] [S2] [S3]
           int startSteps = dataOffset + 8;
           int count = 0;
 
-          // Read up to 4 entries, ensuring we don't read past valid data
+          // Read up to 4 entries (15 mins each)
           while (count < 4 && (startSteps + (count * 2) + 1) < data.length) {
             int idx = startSteps + (count * 2);
             int stepsVal = data[idx] | (data[idx + 1] << 8);
 
+            // Calculate precise time:
+            int totalMinutes = (quarterIndex + count) * 15;
+            // The DayOffset would be needed for exact date, but for now we assume today or relative.
+
+            // X-Axis is just 0-96 index for now
             if (stepsVal > 0) {
-              // Only add non-zero steps? Or all?
-              // Adding 0 is fine for "No steps walked", good for graph continuity
-              _stepsHistory.add(Point(baseTimeIndex + count, stepsVal));
+              _stepsHistory.add(Point(quarterIndex + count, stepsVal));
+              debugPrint(
+                  "Steps History: Q${quarterIndex + count} ($totalMinutes min) = $stepsVal");
             }
             count++;
           }
           if (count > 0) notifyListeners();
         }
+        return; // Handled 0x43
+      }
+
+      // Init Responses (0x01, 0x04, 0x0A)
+      if (cmd == 0x01) {
+        debugPrint("Time Set Response: ${data.sublist(1)}");
+        return;
+      }
+      if (cmd == 0x04) {
+        debugPrint("Phone Name Set Response: ${data.sublist(1)}");
+        return;
+      }
+      if (cmd == 0x0A) {
+        debugPrint("User Preferences Set Response: ${data.sublist(1)}");
+        return;
       }
 
       // Battery Level (0x03)
@@ -570,6 +690,29 @@ class BleService extends ChangeNotifier {
           _batteryLevel = data[levelIndex];
           notifyListeners();
         }
+        return; // Handled 0x03 (Battery)
+      }
+
+      // Binding Response (0x48)
+      if (cmd == PacketFactory.cmdBind) {
+        debugPrint("Received Bind Response (0x48): $hexData");
+        // Analyze if success (usually index 2 is 0x01)
+        // Data: 48 00 01 C8 ...
+        if (data.length > 2) {
+          int status = data[2];
+          if (status == 0x01) {
+            debugPrint("Binding SUCCESS (0x01)");
+          } else {
+            debugPrint("Binding Status: $status");
+          }
+        }
+        return;
+      }
+
+      // Config/Init Response (0x39)
+      if (cmd == PacketFactory.cmdConfig) {
+        debugPrint("Received Config Response (0x39): $hexData");
+        return;
       }
 
       // Heart Rate Log (0x15) - UPDATED with Timestamp Logic
@@ -644,23 +787,31 @@ class BleService extends ChangeNotifier {
     DateTime dt = DateTime.fromMillisecondsSinceEpoch(pointTimeSeconds * 1000);
 
     // Filter by Selected Date
-    // If dt is not on the same day as selectedDate, ignore it.
-    if (dt.year != _selectedDate.year ||
-        dt.month != _selectedDate.month ||
-        dt.day != _selectedDate.day) {
+    // Relaxed Check: Allow if Same Day OR Next Day (to handle Midnight/UTC rollover)
+    bool isSameDay = dt.year == _selectedDate.year &&
+        dt.month == _selectedDate.month &&
+        dt.day == _selectedDate.day;
+    DateTime nextDay = _selectedDate.add(const Duration(days: 1));
+    bool isNextDay = dt.year == nextDay.year &&
+        dt.month == nextDay.month &&
+        dt.day == nextDay.day;
+
+    if (!isSameDay && !isNextDay) {
       debugPrint(
           "Skipping HR Point: Date Mismatch - Point: $dt, Selected: $_selectedDate");
       return;
     }
 
-    // Filter Future Data
-    // Device might send garbage timestamps or "next day" init data
-    if (dt.isAfter(DateTime.now())) {
-      debugPrint("Skipping HR Point: Future Data - Point: $dt");
+    // Filter Future Data (Relaxed: Allow up to 24h into future just in case of weird timezone)
+    if (dt.isAfter(DateTime.now().add(const Duration(hours: 24)))) {
+      debugPrint("Skipping HR Point: Future Data (Way Ahead) - Point: $dt");
       return;
     }
 
     int minutesFromMidnight = dt.hour * 60 + dt.minute;
+    if (isNextDay)
+      minutesFromMidnight += 1440; // Add 24h offset if it rolled over
+
     debugPrint(
         "Adding HR Point: $dt ($minutesFromMidnight min) = $hrValue BPM");
 
@@ -675,19 +826,29 @@ class BleService extends ChangeNotifier {
         _spo2LogBaseTime + (_spo2LogCount * _spo2LogInterval * 60);
     DateTime dt = DateTime.fromMillisecondsSinceEpoch(pointTimeSeconds * 1000);
 
-    if (dt.year != _selectedDate.year ||
-        dt.month != _selectedDate.month ||
-        dt.day != _selectedDate.day) {
+    // Filter by Selected Date
+    bool isSameDay = dt.year == _selectedDate.year &&
+        dt.month == _selectedDate.month &&
+        dt.day == _selectedDate.day;
+    DateTime nextDay = _selectedDate.add(const Duration(days: 1));
+    bool isNextDay = dt.year == nextDay.year &&
+        dt.month == nextDay.month &&
+        dt.day == nextDay.day;
+
+    if (!isSameDay && !isNextDay) {
       debugPrint(
           "Skipping SpO2 Point: Date Mismatch - Point: $dt, Selected: $_selectedDate");
       return;
     }
-    if (dt.isAfter(DateTime.now())) {
+
+    if (dt.isAfter(DateTime.now().add(const Duration(hours: 24)))) {
       debugPrint("Skipping SpO2 Point: Future Data - Point: $dt");
       return;
     }
 
     int minutesFromMidnight = dt.hour * 60 + dt.minute;
+    if (isNextDay) minutesFromMidnight += 1440; // Add 24h offset
+
     debugPrint("Adding SpO2 Point: $dt = $val %");
     _spo2History.add(Point(minutesFromMidnight, val));
   }
@@ -825,6 +986,43 @@ class BleService extends ChangeNotifier {
       await _writeChar!.write(p2);
     } catch (e) {
       debugPrint("Error stop SpO2: $e");
+    }
+  }
+
+  Future<void> startRawPPG() async {
+    if (_writeChar == null) return;
+    try {
+      _isMeasuringRawPPG = true;
+      notifyListeners();
+
+      List<int> packet = PacketFactory.startRawPPG();
+      addToProtocolLog(
+          "TX: " +
+              packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(" ") +
+              " (Start PPG)",
+          isTx: true);
+      await _writeChar!.write(packet);
+    } catch (e) {
+      debugPrint("Error starting PPG: $e");
+      _isMeasuringRawPPG = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopRawPPG() async {
+    _isMeasuringRawPPG = false;
+    notifyListeners();
+    if (_writeChar == null) return;
+    try {
+      List<int> packet = PacketFactory.stopRawPPG();
+      addToProtocolLog(
+          "TX: " +
+              packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(" ") +
+              " (Stop PPG)",
+          isTx: true);
+      await _writeChar!.write(packet);
+    } catch (e) {
+      debugPrint("Error stopping PPG: $e");
     }
   }
 
@@ -1104,6 +1302,106 @@ class BleService extends ChangeNotifier {
     _heartRate = 0;
     _batteryLevel = 0;
     _hrHistory.clear();
+  }
+
+  Future<void> setHeartRateMonitoring(bool enabled) async {
+    if (_writeChar == null) return;
+    try {
+      debugPrint("Setting Heart Rate Auto Monitoring: $enabled");
+      if (enabled) {
+        await _writeChar!.write(PacketFactory.enableHeartRate());
+      } else {
+        await _writeChar!.write(PacketFactory.disableHeartRate());
+      }
+    } catch (e) {
+      debugPrint("Error setting HR monitoring: $e");
+    }
+  }
+
+  Future<void> setSpo2Monitoring(bool enabled) async {
+    if (_writeChar == null) return;
+    try {
+      debugPrint("Setting SpO2 Auto Monitoring: $enabled");
+      if (enabled) {
+        await _writeChar!.write(PacketFactory.enableSpo2());
+      } else {
+        await _writeChar!.write(PacketFactory.disableSpo2());
+      }
+    } catch (e) {
+      debugPrint("Error setting SpO2 monitoring: $e");
+    }
+  }
+
+  Future<void> setStressMonitoring(bool enabled) async {
+    if (_writeChar == null) return;
+    try {
+      debugPrint("Setting Stress Auto Monitoring: $enabled");
+      // 0x36 0x02 0x01 is Verified Start/Enable Command
+      if (enabled) {
+        await _writeChar!.write(PacketFactory.startStress());
+      } else {
+        await _writeChar!.write(PacketFactory.stopStress());
+      }
+    } catch (e) {
+      debugPrint("Error setting Stress monitoring: $e");
+    }
+  }
+
+  Future<void> startPairing() async {
+    if (_writeChar == null) return;
+    try {
+      debugPrint("Starting Pairing Sequence (Gadgetbridge Logic)...");
+
+      // 1. Set Phone Name (0x04 ...)
+      debugPrint("Sending Set Phone Name (04 ...)...");
+      await _writeChar!.write(PacketFactory.createSetPhoneNamePacket());
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // 2. Set Time (0x01 ...) - Validates connection & sets timestamp
+      debugPrint("Sending Set Time (01 ...)...");
+      await _writeChar!.write(PacketFactory.createSetTimePacket());
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // 3. Set User Preferences (0x0A ...) - Replaces old 0x39 config
+      debugPrint("Sending User Preferences (0A ...)...");
+      await _writeChar!.write(PacketFactory.createUserProfilePacket());
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // 4. Request Battery (0x03) - confirm communication
+      debugPrint("Requesting Battery Info (03)...");
+      await _writeChar!.write(PacketFactory.getBatteryPacket());
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // 5. Trigger Android Bonding (System Dialog)
+      // Gadgetbridge relies on passive bonding or earlier triggers, but we'll be explicit.
+      debugPrint("Requesting Android System Bond...");
+      try {
+        await _connectedDevice?.createBond();
+      } catch (e) {
+        debugPrint("Bonding request skipped/failed: $e");
+      }
+
+      // 6. Optional: Check Bind Status (0x48 00) for debugging
+      // Even if Gadgetbridge doesn't use it, it helps us know if the ring thinks it's bound.
+      await Future.delayed(const Duration(seconds: 2));
+      debugPrint("Checking Bind Status (48 00)...");
+      await _writeChar!.write(PacketFactory.createBindRequest());
+
+      debugPrint("Pairing Sequence Complete.");
+    } catch (e) {
+      debugPrint("Error pairing: $e");
+    }
+  }
+
+  Future<void> unpairRing() async {
+    if (_connectedDevice == null) return;
+    try {
+      debugPrint("Attempting to remove bond (Unpair)...");
+      await _connectedDevice!.removeBond();
+      debugPrint("Bond removed by System.");
+    } catch (e) {
+      debugPrint("Error removing bond: $e");
+    }
   }
 }
 
