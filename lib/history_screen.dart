@@ -1,3 +1,4 @@
+import 'dart:math'; // For Point
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +16,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Consumer<BleService>(
@@ -62,6 +63,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             tabs: [
               Tab(text: 'Steps'),
               Tab(text: 'Heart Rate'),
+              Tab(text: 'SpO2'),
             ],
           ),
         ),
@@ -73,6 +75,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               children: [
                 _StepsChartPage(ble: ble),
                 _HrChartPage(ble: ble),
+                _Spo2ChartPage(ble: ble),
               ],
             );
           },
@@ -94,6 +97,7 @@ class _StepsChartPageState extends State<_StepsChartPage> {
   // Steps are 0-96 (15 min intervals)
   double _minX = 0;
   double _maxX = 96;
+  bool _initializedZoom = false; // Add this
   double? _touchX; // 0.0 to 1.0 relative position
 
   void _onViewChange(double minX, double maxX) {
@@ -129,11 +133,28 @@ class _StepsChartPageState extends State<_StepsChartPage> {
     List<Point> sortedSteps = List.from(ble.stepsHistory);
     sortedSteps.sort((a, b) => a.x.compareTo(b.x));
 
+    // Auto-Zoom Steps
+    if (!_initializedZoom && sortedSteps.isNotEmpty) {
+      double first = sortedSteps.first.x.toDouble();
+      double last = sortedSteps.last.x.toDouble();
+      // Relaxed Zoom: +/- 2 hours (8 units)
+      _minX = (first - 8).clamp(0, 96);
+      _maxX = (last + 8).clamp(0, 96);
+
+      // Ensure at least 6 hours (24 units) visible if possible, centered
+      if (_maxX - _minX < 24) {
+        double center = (first + last) / 2;
+        _minX = (center - 12).clamp(0, 96);
+        _maxX = (center + 12).clamp(0, 96);
+      }
+      _initializedZoom = true;
+    }
+
     List<FlSpot> spots = [];
     int currentTotal = 0;
     for (int i = 0; i < sortedSteps.length; i++) {
       final point = sortedSteps[i];
-      currentTotal += point.y;
+      currentTotal += point.y.toInt();
       spots.add(FlSpot(point.x.toDouble(), currentTotal.toDouble()));
     }
 
@@ -340,6 +361,7 @@ class _HrChartPageState extends State<_HrChartPage> {
   // HR is 0-1440 (Minutes)
   double _minX = 0;
   double _maxX = 1440;
+  bool _initializedZoom = false; // Add this
   double? _touchX;
 
   void _onViewChange(double minX, double maxX) {
@@ -378,6 +400,23 @@ class _HrChartPageState extends State<_HrChartPage> {
       spots.add(FlSpot(point.x.toDouble(), point.y.toDouble()));
     }
     spots.sort((a, b) => a.x.compareTo(b.x));
+
+    // Auto-Zoom HR
+    if (!_initializedZoom && spots.isNotEmpty) {
+      double minX = spots.first.x;
+      double maxX = spots.last.x;
+      // Relaxed Zoom: +/- 2 hours (120 min)
+      _minX = (minX - 120).clamp(0, 1440);
+      _maxX = (maxX + 120).clamp(0, 1440);
+
+      // Ensure at least 4 hours (240 min) visible
+      if (_maxX - _minX < 240) {
+        double center = (minX + maxX) / 2;
+        _minX = (center - 120).clamp(0, 1440);
+        _maxX = (center + 120).clamp(0, 1440);
+      }
+      _initializedZoom = true;
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -681,71 +720,264 @@ class _ZoomableChartState extends State<_ZoomableChart> {
   }
 }
 
-/*
-      onScaleUpdate: (ScaleUpdateDetails details) {
-        // Simple Zoom logic
-        // Scale > 1 : Zoom In (Decrease Range)
-        // Scale < 1 : Zoom Out (Increase Range)
+class _Spo2ChartPage extends StatefulWidget {
+  final BleService ble;
+  const _Spo2ChartPage({required this.ble});
 
-        // Panning is handled by focalPointDelta usually, but implementing both pinch and pan together
-        // requires tracking state carefully.
+  @override
+  State<_Spo2ChartPage> createState() => _Spo2ChartPageState();
+}
 
-        // For simplicity:
-        // Use Horizontal Scale for Zoom
-        // Use Horizontal Drag for Pan ?
-        // GestureDetector provides unified events.
+class _Spo2ChartPageState extends State<_Spo2ChartPage> {
+  // SpO2 is 0-1440 (Minutes)
+  double _minX = 0;
+  double _maxX = 1440;
+  bool _initializedZoom = false; // Add this
+  double? _touchX;
 
-        double scale = details.horizontalScale;
+  void _onViewChange(double minX, double maxX) {
+    setState(() {
+      _minX = minX;
+      _maxX = maxX;
+    });
+  }
 
-        // If simply scrolling (scale ~= 1), handle Pan
-        if (scale > 0.9 && scale < 1.1 && details.focalPointDelta.dx != 0) {
-          double range = maxX - minX;
-          // Pan speed relative to range
-          double delta =
-              -(details.focalPointDelta.dx / context.size!.width) * range;
+  @override
+  Widget build(BuildContext context) {
+    final ble = widget.ble;
+    if (ble.spo2History.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text("No SpO2 History Data"),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () => ble.syncSpo2History(),
+              child: const Text("Sync SpO2 History"),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Text("Note: Experimental (0x16)"),
+            ),
+          ],
+        ),
+      );
+    }
 
-          double newMin = minX + delta;
-          double newMax = maxX + delta;
+    List<FlSpot> spots = [];
+    for (int i = 0; i < ble.spo2History.length; i++) {
+      final point = ble.spo2History[i];
+      spots.add(FlSpot(point.x.toDouble(), point.y.toDouble()));
+    }
+    spots.sort((a, b) => a.x.compareTo(b.x));
 
-          if (newMin < 0) {
-            newMin = 0;
-            newMax = range;
-          }
-          if (newMax > maxLimit) {
-            newMax = maxLimit;
-            newMin = maxLimit - range;
-          }
+    // Auto-Zoom SpO2
+    if (!_initializedZoom && spots.isNotEmpty) {
+      double minX = spots.first.x;
+      double maxX = spots.last.x;
+      // Relaxed Zoom: +/- 2 hours (120 min)
+      _minX = (minX - 120).clamp(0, 1440);
+      _maxX = (maxX + 120).clamp(0, 1440);
 
-          onViewChange(newMin, newMax);
-        } else if (scale != 1.0) {
-          // Zoom
-          // Target range
-          double currentRange = maxX - minX;
-          double newRange = currentRange / scale;
+      // Ensure at least 4 hours (240 min) visible
+      if (_maxX - _minX < 240) {
+        double center = (minX + maxX) / 2;
+        _minX = (center - 120).clamp(0, 1440);
+        _maxX = (center + 120).clamp(0, 1440);
+      }
+      _initializedZoom = true;
+    }
 
-          // Clamp range
-          if (newRange < maxLimit * 0.05)
-            newRange = maxLimit * 0.05; // Max Zoom In to 5%
-          if (newRange > maxLimit) newRange = maxLimit;
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Blood Oxygen (%)",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: "Reset Zoom",
+                onPressed: () {
+                  setState(() {
+                    _minX = 0;
+                    _maxX = 1440;
+                  });
+                },
+              ),
+            ],
+          ),
+          Expanded(
+            child: LayoutBuilder(builder: (context, constraints) {
+              double chartHeight = constraints.maxHeight - 22;
 
-          // Keep center?
-          double center = (minX + maxX) / 2;
-          double newMin = center - newRange / 2;
-          double newMax = center + newRange / 2;
+              return Stack(
+                children: [
+                  _ZoomableChart(
+                    minX: _minX,
+                    maxX: _maxX,
+                    maxLimit: 1440,
+                    onViewChange: _onViewChange,
+                    onTouchUpdate: (relX) {
+                      setState(() {
+                        _touchX = relX;
+                      });
+                    },
+                    onTouchEnd: () {
+                      setState(() {
+                        _touchX = null;
+                      });
+                    },
+                    child: LineChart(
+                      LineChartData(
+                        lineTouchData: LineTouchData(
+                            enabled: false), // Disable to allow pure zoom
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: spots,
+                            isCurved: true,
+                            color: Colors.cyan,
+                            dotData: const FlDotData(show: false),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              color: Colors.cyan.withValues(alpha: 0.3),
+                            ),
+                          ),
+                        ],
+                        titlesData: FlTitlesData(
+                          leftTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 22,
+                              interval: (_maxX - _minX) / 6,
+                              getTitlesWidget: (value, meta) {
+                                int minutesFromMidnight = value.toInt();
+                                if (minutesFromMidnight < 0 ||
+                                    minutesFromMidnight >= 1440) {
+                                  return const Text('');
+                                }
+                                int h = minutesFromMidnight ~/ 60;
+                                int m = minutesFromMidnight % 60;
+                                String text =
+                                    "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: Text(text,
+                                      style: const TextStyle(fontSize: 10)),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        minX: _minX,
+                        maxX: _maxX,
+                        minY: 70, // SpO2 usually doesn't go below 70 alive
+                        maxY: 105,
+                      ),
+                    ),
+                  ),
+                  if (_touchX != null && spots.isNotEmpty) ...[
+                    Builder(builder: (context) {
+                      // 1. Calculations
+                      double chartWidth = _maxX - _minX;
+                      double touchValue = _minX + (_touchX! * chartWidth);
 
-          if (newMin < 0) {
-            newMin = 0;
-            newMax = newRange;
-          }
-          if (newMax > maxLimit) {
-            newMax = maxLimit;
-            newMin = maxLimit - newRange;
-          }
+                      // Find nearest Point
+                      FlSpot nearestSpot = spots.first;
+                      double minDist = 999999;
+                      for (var spot in spots) {
+                        double d = (spot.x - touchValue).abs();
+                        if (d < minDist) {
+                          minDist = d;
+                          nearestSpot = spot;
+                        }
+                      }
 
-          onViewChange(newMin, newMax);
-        }
-      },
-      child: child,
+                      // 2. Visual Dot Position
+                      // Y Ratio = (Y - MinY) / (MaxY - MinY)
+                      // MinY = 70, MaxY = 105
+                      double relativeY = (nearestSpot.y - 70) / (105 - 70);
+                      if (relativeY > 1.0) relativeY = 1.0;
+                      if (relativeY < 0.0) relativeY = 0.0;
+
+                      double dotTop = (1.0 - relativeY) * chartHeight;
+
+                      // Snap X to Nearest Spot
+                      // Normalized X = (SpotX - MinX) / (MaxX - MinX)
+                      double relativeSpotX =
+                          (nearestSpot.x - _minX) / (_maxX - _minX);
+                      double dotLeft = relativeSpotX * constraints.maxWidth;
+
+                      // Hide if out of bounds
+                      if (dotLeft < 0 || dotLeft > constraints.maxWidth) {
+                        return const SizedBox();
+                      }
+
+                      int totalMinutes = nearestSpot.x.toInt();
+                      int h = totalMinutes ~/ 60;
+                      int m = totalMinutes % 60;
+                      String timeStr =
+                          "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+
+                      return Stack(
+                        children: [
+                          // The Dot
+                          Positioned(
+                            left: dotLeft - 6,
+                            top: dotTop - 6,
+                            child: Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  border:
+                                      Border.all(color: Colors.cyan, width: 3),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                        blurRadius: 4, color: Colors.black26)
+                                  ]),
+                            ),
+                          ),
+                          // Tooltip
+                          Positioned(
+                            left: dotLeft - 32,
+                            top: 10,
+                            child: IgnorePointer(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  "$timeStr\n${nearestSpot.y.toInt()}%", // Shows cumulative
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ],
+                ],
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
-} */
+}

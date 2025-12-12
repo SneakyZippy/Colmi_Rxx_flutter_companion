@@ -1,0 +1,11 @@
+SPO2
+
+14:58:03 open blood oxygen
+
+14:58:20 start manual measure
+14:58:27 end maunual measure
+
+14:58:55 disable automatic spo2 detection
+14:59:00 enable automatic spo2 detection
+
+14:59:13 switch to yesterday 11.12.2025

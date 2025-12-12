@@ -1,0 +1,38 @@
+open qring app: 22:53:44
+
+pressed "bind ring" start 22:53:54
+
+Connected to ring 22:54:09
+
+accepted the pairing with the ring 22:54:32
+
+
+HR:
+start maunual measurement 22:54:53
+
+got first value 22:55:18
+
+disabled automatic monitoring 22:55:50
+enabled again 22:56:00 
+
+
+HRV
+start manual 22:56:51
+got first value 22:57:52
+
+disabled automatic measurement 22:58:13
+enabled again 22:58:36
+
+
+spo2
+start manual 22:58:56
+first value 22:59:22
+
+disabled automatic monitoring 22:59:45
+enabled again 22:59:58
+
+Stress
+start manual 23:00:19
+first value 23:00:44
+disabled automatic monitoring 23:01:00
+enabled again 23:01:12

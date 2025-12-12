@@ -1,0 +1,14 @@
+HRV
+
+14:51:52 open tab
+
+14:52:03 start manual measure
+14:52:10 stop manual measure
+
+14:52:31 open detail
+
+
+14:52:53 disable automatic
+14:53:01 enable automatic
+
+14:53:19 switch to yesterday (11.12.2025) 

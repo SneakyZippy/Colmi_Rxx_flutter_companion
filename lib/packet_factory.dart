@@ -2,16 +2,41 @@ import 'dart:typed_data';
 
 class PacketFactory {
   // Command Constants
-  static const int cmdHeartRateMeasurement = 0x69; // 105 in decimal
-  static const int cmdSetTime =
-      0x01; // Example for Time Sync, need to confirm header/cmd structure
+  static const int cmdHeartRateMeasurement = 0x69; // 105 - Manual Start
+  static const int cmdStopRealTime = 0x6A; // 106 - Manual Stop
 
   // Headers
   // Protocol: Command + Data (14 bytes) + Checksum
-  // Based on colmi_r02_client docs:
-  // Byte 0: Command
-  // Byte 1-14: Data
-  // Byte 15: Checksum (Sum of 0-14 & 0xFF)
+  // ... (unchanged)
+
+  // ...
+
+  static Uint8List stopHeartRate() {
+    // 0x6A 0x01 0x00 - Stop Real-time Measurement
+    return createPacket(
+      command: cmdStopRealTime,
+      data: [0x01, 0x00],
+    );
+  }
+
+  // ...
+
+  static Uint8List stopRealTimeSpo2() {
+    // 0x6A 0x03 0x00 - Stop Real-time SpO2 Logic
+    return createPacket(
+      command: cmdStopRealTime,
+      data: [0x03, 0x00],
+    );
+  }
+
+  // Helper for HRV Stop
+  static Uint8List stopRealTimeHrv() {
+    // 0x6A 0x0A 0x00
+    return createPacket(
+      command: cmdStopRealTime,
+      data: [0x0A, 0x00],
+    );
+  }
 
   /// Constructs a 16-byte packet.
   /// [command] - The command ID.
@@ -39,22 +64,80 @@ class PacketFactory {
 
   /// Creates sample commands based on user request
   static Uint8List startHeartRate() {
-    // 0x69 is CMD_START_REAL_TIME
-    // Payload: [ReadingType.HEART_RATE (1), Action.START (1)]
-    // Based on tahnok/colmi_r02_client
+    // 0x6901 - Request Heart Rate (Real-time)
+    // Payload: [0x01] or [0x01, 0x01] commonly used for Start
     return createPacket(
       command: cmdHeartRateMeasurement,
-      data: [0x01, 0x01],
+      data: [0x01],
     );
   }
 
-  static Uint8List stopHeartRate() {
-    // 0x69 is CMD_START_REAL_TIME
-    // Payload: [ReadingType.HEART_RATE (1), Action.STOP (0)]
+  static Uint8List enableHeartRate() {
+    // 0x16 0x02 0x01 - Enable Periodic Monitoring
+    return createPacket(
+      command: 0x16,
+      data: [0x02, 0x01],
+    );
+  }
+
+  static Uint8List disableHeartRate() {
+    // 0x16 0x02 0x00 - Disable Periodic Monitoring
+    return createPacket(
+      command: 0x16,
+      data: [0x02, 0x00],
+    );
+  }
+
+  static Uint8List enableSpo2() {
+    // 0x2C 0x02 0x01 - Enable Periodic Monitoring
+    return createPacket(
+      command: 0x2C,
+      data: [0x02, 0x01],
+    );
+  }
+
+  static Uint8List disableSpo2() {
+    // 0x2C 0x02 0x00 - Disable Periodic Monitoring
+    return createPacket(
+      command: 0x2C,
+      data: [0x02, 0x00],
+    );
+  }
+
+  // Reference: requestSpO2 (hex: '6903') - This is the Real-Time measurement
+  static Uint8List startSpo2() {
     return createPacket(
       command: cmdHeartRateMeasurement,
-      data: [0x01, 0x00],
+      data: [0x03, 0x01],
     );
+  }
+
+  // Reference: disableSpO2Monitoring (hex: '2c0200')
+  static List<Uint8List> stopSpo2() {
+    return [
+      createPacket(command: 0x2C, data: [0x02, 0x00]),
+    ];
+  }
+
+  // Reference: disableStressMonitoring (hex: '360200')
+  static Uint8List stopStress() {
+    return createPacket(
+      command: 0x36,
+      data: [0x02, 0x00],
+    );
+  }
+
+  static Uint8List startStress() {
+    // 0x36 0x02 0x01 - Start Stress Measurement (Verified Golden Log)
+    // Note: 0x36 0x02 seems to be the "Config/Control" subcommand grouping
+    return createPacket(
+      command: 0x36,
+      data: [0x02, 0x01],
+    );
+  }
+
+  static Uint8List reboot() {
+    return createPacket(command: 0x08);
   }
 
   static const int cmdGetSteps = 0x43; // 67 decimal
@@ -72,6 +155,7 @@ class PacketFactory {
   // New Commands
   static const int cmdGetBattery = 0x03;
   static const int cmdGetHeartRateLog = 0x15; // 21 decimal
+  static const int cmdGetSpo2Log = 0x16; // 22 decimal (Experimental)
 
   /// Creates packet to request battery level
   static Uint8List getBatteryPacket() {
@@ -96,5 +180,187 @@ class PacketFactory {
     }
 
     return createPacket(command: cmdGetHeartRateLog, data: data);
+  }
+
+  // Binding / Pairing Commands
+  static const int cmdBind = 0x48;
+  static const int cmdConfig = 0x39; // or UserInfo/Settings
+
+  static Uint8List createBindRequest() {
+    // 0x48 00 ...
+    return createPacket(command: cmdBind, data: [0x00]);
+  }
+
+  /// Creates the "Bind Action" packet found in official app logs.
+  /// HEX: 48 00 01 C8 00 00 00 00 32 F6 00 01 2D 00 19 80
+  /// This likely sets the User ID or Authorization Token.
+  static Uint8List createBindActionPacket() {
+    return Uint8List.fromList([
+      0x48,
+      0x00,
+      0x01,
+      0xC8,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x32,
+      0xF6,
+      0x00,
+      0x01,
+      0x2D,
+      0x00,
+      0x19,
+      0x80
+    ]);
+    // Note: We bypass createPacket here to ensure EXACT byte matching including checksum/tail if the ring expects this specific blob.
+    // However, if checksum is needed, createPacket does it.
+    // Let's verify if the last byte 0x80 is a checksum.
+    // Sum(0..14) = 48+0+1+C8+0+0+0+0+32+F6+0+1+2D+0+19 = 265 (0x109) -> 0x09?
+    // 0x80 is definitely not 0x09.
+    // This implies the packet is RAW and follows a different structure or the log `80` is correct.
+    // I will send it exactly as observed.
+  }
+
+  static Uint8List createConfigInit() {
+    // 0x39 05 ...
+    return createPacket(command: cmdConfig, data: [0x05]);
+  }
+
+  // Gadgetbridge Commands
+  static const int cmdSetTime = 0x01;
+  static const int cmdBattery = 0x03;
+  static const int cmdPhoneName = 0x04;
+  static const int cmdPreferences = 0x0A;
+
+  /// Creates packet to set time (0x01 YY MM DD HH MM SS) - BCD Encoded!
+  static Uint8List createSetTimePacket() {
+    final now = DateTime.now();
+    int toBcd(int val) => ((val ~/ 10) << 4) | (val % 10);
+
+    int y = toBcd(now.year % 100);
+    int m = toBcd(now.month);
+    int d = toBcd(now.day);
+    int h = toBcd(now.hour);
+    int min = toBcd(now.minute);
+    int s = toBcd(now.second);
+    return createPacket(command: cmdSetTime, data: [y, m, d, h, min, s]);
+  }
+
+  /// Creates packet to set Phone Name (0x04 02 0A ...)
+  static Uint8List createSetPhoneNamePacket() {
+    // 0x04 + 0x02(Major) + 0x0A(Minor) + 'G' 'B' (Gadgetbridge)
+    // We'll use 'F' 'L' for Flutter just to be cool, or stick to 'G' 'B' if it matters.
+    // Let's use 'G' 'B' first to match Gadgetbridge exactly.
+    return createPacket(command: cmdPhoneName, data: [0x02, 0x0A, 0x47, 0x42]);
+  }
+
+  /// Creates packet to set User Preferences (0x0A 02 ...)
+  /// Replaces the old 0x39 sequence.
+  static Uint8List createUserProfilePacket() {
+    // 0x0A + 0x02 (Write) + 0x00(24h) + 0x00(Metric) + 0x00(Male) + Age(30) + H(175) + W(70) + 00 00 00
+    // Using default dummy values for now: Male, 30yo, 175cm, 70kg.
+    return createPacket(command: cmdPreferences, data: [
+      0x02, // Write
+      0x00, // 24h
+      0x00, // Metric
+      0x00, // Gender: Male
+      30, // Age
+      175, // Height (cm)
+      70, // Weight (kg)
+      0x00, // Sys BP
+      0x00, // Dia BP
+      0x00 // HR Alarm
+    ]);
+  }
+
+  // Legacy User Profile (0x39)
+  // Found in logs: 39 04 ...
+  static Uint8List createLegacyUserProfilePacket() {
+    return createPacket(command: cmdConfig, data: [
+      0x04, // Write? (Log showed 39 04)
+      0x00, // 24h
+      0x00, // Metric
+      0x00, // Gender: Male
+      30, // Age
+      175, // Height (cm)
+      70, // Weight (kg)
+      0x00, // Sys BP
+      0x00, // Dia BP
+      0x00 // HR Alarm
+    ]);
+  }
+
+  // Legacy User Profile Empty (0x39 04 00...)
+  // Official App sends this (all zeros) and gets 39 ff?
+  // Maybe it's a reset.
+  static Uint8List createLegacyUserProfilePacketEmpty() {
+    return createPacket(
+        command: cmdConfig,
+        data: [0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+  }
+
+  /// Creates packet to request SpO2 Log
+  /// [dayOffset] - 0 for today. Structure same as Steps (0x43).
+  static Uint8List getSpo2LogPacket({int dayOffset = 0}) {
+    // Structure assumed same as Steps (0x43) since response starts with 0xF0
+    // [DayOffset, Key?, Start?, Count?, ?]
+    // Steps uses: [Offset, 0x0f, 0x00, 0x60, 0x00]
+    // We try the same structure for SpO2. Count 0x60 (96) covers 24h of 15-min blocks.
+    // If SpO2 is sparse, this might just request "a day's buffer".
+    // Using 0x03 as Key (SpO2 Type) instead of 0x0F
+    List<int> data = [dayOffset, 0x03, 0x00, 0x60, 0x00];
+    return createPacket(command: cmdGetSpo2Log, data: data);
+  }
+
+  // Raw Sensor Data Commands
+  static const int cmdRawData = 0xA1;
+  static const int subCmdEnableRaw = 0x04;
+  static const int subCmdDisableRaw = 0x02;
+
+  static Uint8List enableRawDataPacket() {
+    return createPacket(command: cmdRawData, data: [subCmdEnableRaw]);
+  }
+
+  static Uint8List disableRawDataPacket() {
+    return createPacket(command: cmdRawData, data: [subCmdDisableRaw]);
+  }
+
+  // SpO2 History Sync (Alternative 0xBC)
+  static const int cmdSyncSpo2HistoryNew = 0xBC;
+  static const int subCmdSyncSpo2 = 0x2A;
+
+  static Uint8List getSpo2LogPacketNew() {
+    // 0xBC 0x2A ...
+    return createPacket(command: cmdSyncSpo2HistoryNew, data: [subCmdSyncSpo2]);
+  }
+
+  // Stress History Sync (0x37)
+  static const int cmdSyncStress = 0x37;
+
+  static Uint8List getStressHistoryPacket({int packetIndex = 0}) {
+    // Gadgetbridge sends 0x37 [PacketIndex]
+    // 0x00 is the first packet.
+    return createPacket(command: cmdSyncStress, data: [packetIndex]);
+  }
+
+  // Raw PPG Stream (Green Light High Frequency)
+  // Found in Golden Log: 69 08 ...
+  static Uint8List startRawPPG() {
+    return createPacket(
+      command: cmdHeartRateMeasurement, // 0x69
+      data: [
+        0x08,
+        0x25
+      ], // 0x25 seen in log #1863, might be specific sensor config
+      // Or just 0x08? Log showed: 69 08 25 ...
+      // Let's try [0x08, 0x25] first, if fail try [0x08]
+    );
+  }
+
+  static Uint8List stopRawPPG() {
+    // No explicit stop seen in log (it naturally timed out or used the generic disable?)
+    // We will try sending the standard HR Disable: 16 02 00
+    return disableHeartRate();
   }
 }

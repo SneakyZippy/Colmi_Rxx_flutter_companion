@@ -1,0 +1,7 @@
+misc:
+
+15:23:05 reset ring
+deletes: steps, calories, mileage data, sleep monitoring
+
+15:23:52 shutdown
+ring will restart after charging
