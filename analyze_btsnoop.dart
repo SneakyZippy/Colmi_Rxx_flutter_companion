@@ -3,21 +3,24 @@ import 'dart:typed_data';
 
 void main(List<String> args) async {
   if (args.isEmpty) {
-    print("Usage: dart analyze_btsnoop.dart <file1> [file2...]");
+    print("Usage: dart analyze_btsnoop.dart <file1> [time_filter]");
     return;
   }
 
-  for (var path in args) {
-    if (await File(path).exists()) {
-      await parseBtsnoop(path);
-    } else {
-      print("File not found: $path");
-    }
+  // Treat first arg as file, second as filter if exists
+  String path = args[0];
+  String? filter = args.length > 1 ? args[1] : null;
+
+  if (await File(path).exists()) {
+    await parseBtsnoop(path, filter: filter);
+  } else {
+    print("File not found: $path");
   }
 }
 
-Future<void> parseBtsnoop(String path) async {
+Future<void> parseBtsnoop(String path, {String? filter}) async {
   print("--- Analyzing $path ---");
+  if (filter != null) print("Filter: $filter");
   final file = File(path);
   final bytes = await file.readAsBytes();
   final ByteData data = bytes.buffer.asByteData();
@@ -97,6 +100,10 @@ Future<void> parseBtsnoop(String path) async {
     }
 
     // RAW DUMP MINUTE 54 (Early)
+    if (filter != null && !timeStr.contains(filter)) {
+      continue;
+    }
+
     if (dt.hour == 14 && dt.minute == 54 && packetCount < 880) {
       String rawHex =
           packetData.map((b) => b.toRadixString(16).padLeft(2, '0')).join("");
@@ -162,20 +169,7 @@ Future<void> parseBtsnoop(String path) async {
           relevant = true;
         }
 
-        // Bypass filter for minute 53 deep dive
-        if (dt.hour == 14 && dt.minute == 53) {
-          int attHandle = 0;
-          String hex = "";
-          if (attData.length >= 3) {
-            attHandle = attData[1] | (attData[2] << 8);
-            hex = attData
-                .sublist(3)
-                .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
-                .join("");
-          }
-          print(
-              "[$timeStr] #$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex (Op:0x${opcode.toRadixString(16)})");
-        } else if (relevant) {
+        if (relevant) {
           // Handle is next 2 bytes
           if (attData.length >= 3) {
             int attHandle = attData[1] | (attData[2] << 8);
@@ -184,13 +178,10 @@ Future<void> parseBtsnoop(String path) async {
                 .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
                 .join("");
 
-            // Filter by time: 14:53 minute
-            if (dt.hour == 14 && dt.minute == 53) {
-              // Print ALL WriteReqs to see what we missed
-              if (opcode == 0x12 || opcode == 0x52) {
-                print(
-                    "[$timeStr] #$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex");
-              }
+            if (hex.startsWith("19") || hex.startsWith("4801")) {
+              // 19 = Login?, 4801 = Bind Action?
+              print(
+                  "[$timeStr] #$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex");
             }
           }
         }

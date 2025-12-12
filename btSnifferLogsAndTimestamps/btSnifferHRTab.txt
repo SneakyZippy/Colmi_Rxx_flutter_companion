@@ -1,0 +1,15 @@
+HR 
+
+14:40:53 synch data (refresh by pulling down on main screen)
+14:41:17 open hr tab (show stats) 
+14:41:37 start manual measure
+14:41:42 stop manual measure
+
+14:42:26 open data details
+14:42:37 synch data details
+
+14:43:10 change date to yesterday (11.10.2025)
+14:43:21 change date to 10.12.2025
+
+14:43:50 deactivate automatic measurement
+14:43:59 activate measurement

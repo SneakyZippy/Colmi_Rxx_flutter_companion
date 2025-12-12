@@ -10,21 +10,33 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // Local state for toggles.
-  // Ideally, we'd read this from the device or persistent storage.
-  // For now, default to false or try to infer?
-  // Let's default to false as safe initial state.
-  bool _hrAutoEnabled = false;
-  bool _spo2AutoEnabled = false;
-  bool _stressAutoEnabled = false;
+  @override
+  void initState() {
+    super.initState();
+    // Fetch latest settings from ring on open
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<BleService>(context, listen: false).readAutoSettings();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bleService = Provider.of<BleService>(context, listen: false);
+    // Listen to changes
+    final bleService = Provider.of<BleService>(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              bleService.readAutoSettings();
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Reading Ring Settings...")));
+            },
+          )
+        ],
       ),
       body: ListView(
         children: [
@@ -35,60 +47,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-          SwitchListTile(
-            title: const Text("Heart Rate Monitoring"),
-            subtitle: const Text("Automatically measures HR periodically."),
-            value: _hrAutoEnabled,
-            onChanged: (bool value) {
-              setState(() {
-                _hrAutoEnabled = value;
-              });
-              bleService.setHeartRateMonitoring(value);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                      "Heart Rate Monitoring ${value ? 'Enabled' : 'Disabled'}"),
-                  duration: const Duration(milliseconds: 1000),
+          Column(
+            children: [
+              SwitchListTile(
+                title: const Text("Heart Rate Monitoring"),
+                subtitle: const Text("Enable automatic periodic measurement."),
+                value: bleService.hrAutoEnabled,
+                onChanged: (bool value) {
+                  bleService
+                      .setAutoHrInterval(value ? bleService.hrInterval : 0);
+                },
+              ),
+              if (bleService.hrAutoEnabled)
+                ListTile(
+                  title: const Text("Measurement Interval"),
+                  subtitle:
+                      Text("Measure every ${bleService.hrInterval} minutes"),
+                  trailing: DropdownButton<int>(
+                    value: bleService.hrInterval,
+                    items: [5, 10, 15, 30, 45, 60].map((int value) {
+                      return DropdownMenuItem<int>(
+                        value: value,
+                        child: Text("$value min"),
+                      );
+                    }).toList(),
+                    onChanged: (int? newValue) {
+                      if (newValue != null) {
+                        bleService.setAutoHrInterval(newValue);
+                      }
+                    },
+                  ),
                 ),
-              );
-            },
+            ],
           ),
           const Divider(),
           SwitchListTile(
             title: const Text("SpO2 Monitoring"),
             subtitle: const Text("Automatically measures SpO2 periodically."),
-            value: _spo2AutoEnabled,
+            value: bleService.spo2AutoEnabled,
             onChanged: (bool value) {
-              setState(() {
-                _spo2AutoEnabled = value;
-              });
-              bleService.setSpo2Monitoring(value);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content:
-                      Text("SpO2 Monitoring ${value ? 'Enabled' : 'Disabled'}"),
-                  duration: const Duration(milliseconds: 1000),
-                ),
-              );
+              bleService.setAutoSpo2(value);
             },
           ),
           const Divider(),
           SwitchListTile(
             title: const Text("Stress Monitoring"),
             subtitle: const Text("Starts periodic stress measurement."),
-            value: _stressAutoEnabled,
+            value: bleService.stressAutoEnabled,
             onChanged: (bool value) {
-              setState(() {
-                _stressAutoEnabled = value;
-              });
-              bleService.setStressMonitoring(value);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                      "Stress Monitoring ${value ? 'Enabled' : 'Disabled'}"),
-                  duration: const Duration(milliseconds: 1000),
-                ),
-              );
+              bleService.setAutoStress(value);
+            },
+          ),
+          const Divider(),
+          SwitchListTile(
+            title: const Text("HRV Monitoring (Experimental)"),
+            subtitle: const Text("Enables Scheduled HRV (0x38)."),
+            value: bleService.hrvAutoEnabled,
+            onChanged: (bool value) {
+              bleService.setAutoHrv(value);
             },
           ),
           const Divider(),
@@ -113,6 +129,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SnackBar(content: Text("Removing Bond...")),
               );
               await bleService.unpairRing();
+            },
+          ),
+          ListTile(
+            title: const Text("Factory Reset"),
+            subtitle: const Text("Resets ring to factory defaults (FF 66 66)."),
+            leading: const Icon(Icons.restore),
+            onTap: () async {
+              bool confirm = await showDialog(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                              title: const Text("Confirm Reset"),
+                              content: const Text(
+                                  "This will reboot the ring and wipe settings. Continue?"),
+                              actions: [
+                                TextButton(
+                                    onPressed: () => Navigator.pop(c, false),
+                                    child: const Text("Cancel")),
+                                TextButton(
+                                    onPressed: () => Navigator.pop(c, true),
+                                    child: const Text("Reset")),
+                              ])) ??
+                  false;
+
+              if (confirm) {
+                await bleService.factoryReset();
+              }
             },
           ),
           const Padding(

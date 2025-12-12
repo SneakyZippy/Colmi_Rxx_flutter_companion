@@ -16,6 +16,39 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    // Listen for connection changes to kick user to dashboard if disconnected
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ble = Provider.of<BleService>(context, listen: false);
+      ble.addListener(_handleConnectionChange);
+    });
+  }
+
+  @override
+  void dispose() {
+    final ble = Provider.of<BleService>(context, listen: false);
+    ble.removeListener(_handleConnectionChange);
+    super.dispose();
+  }
+
+  void _handleConnectionChange() {
+    final ble = Provider.of<BleService>(context, listen: false);
+    // If we lose connection and are not on the dashboard, kick back to dashboard
+    if (!ble.isConnected && _selectedIndex != 0) {
+      if (mounted) {
+        setState(() {
+          _selectedIndex = 0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("Connection lost. Returning to Dashboard.")),
+        );
+      }
+    }
+  }
+
   // Pages for Navigation
   // 0: Dashboard
   // 1: Measure
@@ -79,7 +112,7 @@ class DashboardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ringularity Dashboard')),
+      appBar: AppBar(title: const Text('Ringularity V0.0.2 Dashboard')),
       body: Consumer<BleService>(
         builder: (context, ble, child) {
           return SingleChildScrollView(
@@ -199,9 +232,17 @@ class DashboardView extends StatelessWidget {
                       _MetricCard(
                         title: "Stress",
                         value: "${ble.stress}",
-                        unit: "HRV",
+                        unit: "Score", // 0-100
                         icon: Icons.psychology,
                         color: Colors.purple,
+                        time: "Latest",
+                      ),
+                      _MetricCard(
+                        title: "HRV",
+                        value: "${ble.hrv}",
+                        unit: "ms",
+                        icon: Icons.monitor_heart,
+                        color: Colors.deepPurple,
                         time: "Latest",
                       ),
                       _MetricCard(
@@ -217,7 +258,7 @@ class DashboardView extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // 3. Main Action
+                  // 4. Main Action
                   SizedBox(
                     height: 50,
                     child: ElevatedButton.icon(

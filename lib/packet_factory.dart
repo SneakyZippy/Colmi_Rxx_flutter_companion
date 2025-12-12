@@ -2,14 +2,41 @@ import 'dart:typed_data';
 
 class PacketFactory {
   // Command Constants
-  static const int cmdHeartRateMeasurement = 0x69; // 105 in decimal
+  static const int cmdHeartRateMeasurement = 0x69; // 105 - Manual Start
+  static const int cmdStopRealTime = 0x6A; // 106 - Manual Stop
 
   // Headers
   // Protocol: Command + Data (14 bytes) + Checksum
-  // Based on colmi_r02_client docs:
-  // Byte 0: Command
-  // Byte 1-14: Data
-  // Byte 15: Checksum (Sum of 0-14 & 0xFF)
+  // ... (unchanged)
+
+  // ...
+
+  static Uint8List stopHeartRate() {
+    // 0x6A 0x01 0x00 - Stop Real-time Measurement
+    return createPacket(
+      command: cmdStopRealTime,
+      data: [0x01, 0x00],
+    );
+  }
+
+  // ...
+
+  static Uint8List stopRealTimeSpo2() {
+    // 0x6A 0x03 0x00 - Stop Real-time SpO2 Logic
+    return createPacket(
+      command: cmdStopRealTime,
+      data: [0x03, 0x00],
+    );
+  }
+
+  // Helper for HRV Stop
+  static Uint8List stopRealTimeHrv() {
+    // 0x6A 0x0A 0x00
+    return createPacket(
+      command: cmdStopRealTime,
+      data: [0x0A, 0x00],
+    );
+  }
 
   /// Constructs a 16-byte packet.
   /// [command] - The command ID.
@@ -41,15 +68,7 @@ class PacketFactory {
     // Payload: [0x01] or [0x01, 0x01] commonly used for Start
     return createPacket(
       command: cmdHeartRateMeasurement,
-      data: [0x01, 0x01],
-    );
-  }
-
-  static Uint8List stopHeartRate() {
-    // 0x69 0x01 0x00 - Stop Real-time Measurement
-    return createPacket(
-      command: cmdHeartRateMeasurement,
-      data: [0x01, 0x00],
+      data: [0x01],
     );
   }
 
@@ -117,14 +136,6 @@ class PacketFactory {
     );
   }
 
-  static Uint8List stopRealTimeSpo2() {
-    // 0x69 0x03 0x00 - Stop Real-time SpO2 Logic
-    return createPacket(
-      command: cmdHeartRateMeasurement,
-      data: [0x03, 0x00],
-    );
-  }
-
   static Uint8List reboot() {
     return createPacket(command: 0x08);
   }
@@ -180,6 +191,37 @@ class PacketFactory {
     return createPacket(command: cmdBind, data: [0x00]);
   }
 
+  /// Creates the "Bind Action" packet found in official app logs.
+  /// HEX: 48 00 01 C8 00 00 00 00 32 F6 00 01 2D 00 19 80
+  /// This likely sets the User ID or Authorization Token.
+  static Uint8List createBindActionPacket() {
+    return Uint8List.fromList([
+      0x48,
+      0x00,
+      0x01,
+      0xC8,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x32,
+      0xF6,
+      0x00,
+      0x01,
+      0x2D,
+      0x00,
+      0x19,
+      0x80
+    ]);
+    // Note: We bypass createPacket here to ensure EXACT byte matching including checksum/tail if the ring expects this specific blob.
+    // However, if checksum is needed, createPacket does it.
+    // Let's verify if the last byte 0x80 is a checksum.
+    // Sum(0..14) = 48+0+1+C8+0+0+0+0+32+F6+0+1+2D+0+19 = 265 (0x109) -> 0x09?
+    // 0x80 is definitely not 0x09.
+    // This implies the packet is RAW and follows a different structure or the log `80` is correct.
+    // I will send it exactly as observed.
+  }
+
   static Uint8List createConfigInit() {
     // 0x39 05 ...
     return createPacket(command: cmdConfig, data: [0x05]);
@@ -191,15 +233,17 @@ class PacketFactory {
   static const int cmdPhoneName = 0x04;
   static const int cmdPreferences = 0x0A;
 
-  /// Creates packet to set time (0x01 YY MM DD HH MM SS) - No 0x00 prefix!
+  /// Creates packet to set time (0x01 YY MM DD HH MM SS) - BCD Encoded!
   static Uint8List createSetTimePacket() {
     final now = DateTime.now();
-    int y = now.year % 100;
-    int m = now.month;
-    int d = now.day;
-    int h = now.hour;
-    int min = now.minute;
-    int s = now.second;
+    int toBcd(int val) => ((val ~/ 10) << 4) | (val % 10);
+
+    int y = toBcd(now.year % 100);
+    int m = toBcd(now.month);
+    int d = toBcd(now.day);
+    int h = toBcd(now.hour);
+    int min = toBcd(now.minute);
+    int s = toBcd(now.second);
     return createPacket(command: cmdSetTime, data: [y, m, d, h, min, s]);
   }
 
@@ -228,6 +272,32 @@ class PacketFactory {
       0x00, // Dia BP
       0x00 // HR Alarm
     ]);
+  }
+
+  // Legacy User Profile (0x39)
+  // Found in logs: 39 04 ...
+  static Uint8List createLegacyUserProfilePacket() {
+    return createPacket(command: cmdConfig, data: [
+      0x04, // Write? (Log showed 39 04)
+      0x00, // 24h
+      0x00, // Metric
+      0x00, // Gender: Male
+      30, // Age
+      175, // Height (cm)
+      70, // Weight (kg)
+      0x00, // Sys BP
+      0x00, // Dia BP
+      0x00 // HR Alarm
+    ]);
+  }
+
+  // Legacy User Profile Empty (0x39 04 00...)
+  // Official App sends this (all zeros) and gets 39 ff?
+  // Maybe it's a reset.
+  static Uint8List createLegacyUserProfilePacketEmpty() {
+    return createPacket(
+        command: cmdConfig,
+        data: [0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
   }
 
   /// Creates packet to request SpO2 Log

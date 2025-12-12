@@ -1,6 +1,6 @@
 # 💍 Colmi Ring R02 - Protocol Reference & Knowledge Base
 
-**Last Updated:** 2025-12-11
+**Last Updated:** 2025-12-12
 **Status:** Working
 
 ---
@@ -9,19 +9,27 @@
 
 | Feature | Action | HEX Command | Behavior / Notes |
 | :--- | :--- | :--- | :--- |
-| **Heart Rate** | **Auto Mode** | `16 02 01` | Enable Automatic Monitoring. |
+| **Heart Rate** | **Auto Mode** | `16 02 01 [Min]` | Enable Auto. `Min` = Minutes (05, 0A, 1E, 3C). |
 | **Heart Rate** | **Manual Mode** | `16 02 00` | Disable Automatic / Stop Manual. |
 | **SpO2** | **Auto Mode** | `2C 02 01` | Enable Automatic Monitoring. |
 | **SpO2** | **Manual Mode** | `2C 02 00` | Disable Automatic / Stop Manual. |
-| **Stress** | **Start** | `36 02 01` | **GOLDEN.** Start Measurement. |
+| **Stress** | **Start** | `36 02 01` | **GOLDEN.** Start Measurement (Auto/Manual). |
 | **Stress** | **Stop** | `36 02 00` | **GOLDEN.** Stop Measurement. |
-| **Raw PPG** | **Stream** | `69 08` | Real-time PPG Waveform Stream. |
+| **HRV** | **Auto Mode** | `38 02 01` | **NEW!** Enable Scheduled HRV Monitoring. |
+| **HRV** | **Manual Start** | `69 0A` | **Real-time** HRV/Stress Measurement. Stop: `6A 0A`. |
+| **Sports** | **Start Walk** | `77 01 04` | Start "Walk" Activity. |
+| **Sports** | **Start Run** | `77 01 07` | Start "Run" Activity. |
+| **SpO2** | **Manual Start** | `69 08` | **Real-time** SpO2 Measurement (Red/Green?). Stop: `6A 08`. |
 | **Config** | **Init** | `39 05` | Sent during pairing/binding. |
 | **Binding** | **Request** | `48 00` | Bind Request/Check. Response `48 00 01` = Bound. |
 
-> **⚠️ CRITICAL: DO NOT USE `0x69` TO STOP!**
-> Sending `69 01 00` (Stop HR) or `69 03 00` (Stop SpO2) actually **RE-TRIGGERS** the measurement.
-> *Always use the `Disable` commands (`16`, `2C`, `36`) to stop sensors.*
+> **⚠️ CRITICAL: MANUAL MODE vs AUTO MODE**
+> *   **Auto/Periodic:** Uses configuration commands (`16`, `2C`, `36`, `38`).
+> *   **Manual/Real-time:**
+>     - **HR:** `69 01` (Start) / `6A 01` (Stop)
+>     - **SpO2:** `69 08` (Start) / `6A 08` (Stop) - *Note: 0x08 often implies Green Light/PPI, but logs confirm this is used for SpO2.*
+>     - **HRV:** `69 0A` (Start) / `6A 0A` (Stop)
+> *   *Current App Recommendation:* Stick to Auto-Mode commands for stability unless Real-Time stream is needed.
 
 ---
 
@@ -73,7 +81,15 @@ Based on `ColmiR0xConstants.java` and `ColmiR0xPacketHandler.java`:
 | **0x0A** | User Settings | `0A 02 [Prefs...]` | Gender, Age, Height, Weight, BP, HR Alarm. |
 | **0x08** | Power Off | `08 01` | Shuts down the ring. |
 | **0x21** | Set Goals | `Step(4) Cal(4) Dist(4) Sport(2) Sleep(2)` | Little Endian integers. |
+| **0x21** | Set Goals | `Step(4) Cal(4) Dist(4) Sport(2) Sleep(2)` | Little Endian integers. |
 | **0x50** | Find Device | `50 55 AA` | Vibrates/Flashes ring. |
+| **0xFF** | Factory Reset | `FF 66 66` | **Destructive.** Clears all data and settings. |
+
+### Activity Tracking (0x77)
+**New Discovery.** Real-time sports mode control.
+*   **Structure:** `77 [Op] [Type]`
+*   **Ops:** `01`=Start, `02`=Pause, `03`=Resume, `04`=End.
+*   **Types:** `04`=Walk, `07`=Run.
 
 ### Auto-Monitoring / Config (0x16, 0x2C, 0x36)
 Structure: `[Cmd] [Op] [Enable] [Interval?]`
@@ -81,6 +97,7 @@ Structure: `[Cmd] [Op] [Enable] [Interval?]`
 *   **Enable:** `0x00` (Disable), `0x01` (Enable).
 *   **0x16 (HR):** Payload includes Interval (mins).
 *   **0x2C (SpO2)** & **0x36 (Stress):** Simple Enable/Disable.
+*   **0x38 (HRV):** **NEW Discovery.** Scheduled HRV Monitoring. Enable (`02 01`) / Disable (`02 00`). Not present in older Gadgetbridge sources.
 
 ### Data Sync Commands
 | Command | Data Type | Sub-Type | Notes |

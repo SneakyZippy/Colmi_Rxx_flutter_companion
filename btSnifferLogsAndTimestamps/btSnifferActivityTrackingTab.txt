@@ -1,0 +1,22 @@
+sport tracking
+15:09:11 open tab
+
+start activities:
+walk:
+15:09:36 pressed start but had a 3 second countdown, so this was the start press 
+15:09:38 and this was when it actually started after countdown
+15:10:42 pause
+15:10:51 resume
+15:10:58 pause again
+15:11:04 end activity
+
+
+
+run: 
+
+15:11:21 click  
+15:11:25 after countdown 
+15:11:50 pause
+15:11:57 resume
+15:12:02 pause
+15:12:07 end (but since it was under a minute it didnt save)

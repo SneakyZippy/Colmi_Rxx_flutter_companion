@@ -1,11 +1,8 @@
 
-tested functions with timestamp and the logs:
-TimeStampsTryingToFindCommands
-btsnoop_hci
 
+- use the COMMAND_STATUS file as information file and update it as we gather new information
 
-use the COMMAND_STATUS file as information file and update it as we gather new information
-
+- LOG_FINDINGS_SUMMARY are the informations we gathered out of btsniffing, there are .log and .txt files that work together to show the information aswell as the timestamp.
 
 Gadgetbridge:
 Support for this line of smart rings was added with

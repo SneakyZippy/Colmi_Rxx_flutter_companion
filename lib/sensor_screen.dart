@@ -174,6 +174,50 @@ class _SensorScreenState extends State<SensorScreen> {
     }
   }
 
+  Widget _buildTile({
+    required String title,
+    required IconData icon,
+    required bool isActive,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    final color = isActive ? activeColor.withOpacity(0.1) : Colors.transparent;
+    final borderColor = isActive ? activeColor : Colors.grey.withOpacity(0.3);
+    final contentColor = isActive ? activeColor : Colors.grey;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor, width: 2),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 40, color: contentColor),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, color: contentColor),
+              ),
+              if (isActive) ...[
+                const SizedBox(height: 5),
+                const Text("ACTIVE",
+                    style: TextStyle(fontSize: 10, letterSpacing: 1.0))
+              ]
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Wear Detection Heuristic
@@ -259,6 +303,8 @@ class _SensorScreenState extends State<SensorScreen> {
                       label: "HR",
                       value: "${ble.heartRate}",
                       color: Colors.red),
+                  _MiniMetric(
+                      label: "HRV", value: "${ble.hrv} ms", color: Colors.teal),
                 ],
               );
             }),
@@ -268,72 +314,132 @@ class _SensorScreenState extends State<SensorScreen> {
             const Text("Verified Sensors (Golden)",
                 style: TextStyle(fontWeight: FontWeight.bold)),
             const Divider(),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 1.3,
+              children: [
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return _buildTile(
+                    title: "Live HR",
+                    icon: Icons.favorite,
+                    isActive: ble.isMeasuringHeartRate,
+                    activeColor: Colors.red,
+                    onTap: () {
+                      if (!ble.isConnected) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Not connected to Ring")));
+                        return;
+                      }
+                      if (ble.isMeasuringHeartRate)
+                        ble.stopRealTimeHeartRate();
+                      else
+                        ble.startRealTimeHeartRate();
+                    },
+                  );
+                }),
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return _buildTile(
+                    title: "Live SpO2",
+                    icon: Icons.water_drop,
+                    isActive: ble.isMeasuringSpo2,
+                    activeColor: Colors.blue,
+                    onTap: () {
+                      if (!ble.isConnected) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Not connected to Ring")));
+                        return;
+                      }
+                      if (ble.isMeasuringSpo2)
+                        ble.stopRealTimeSpo2();
+                      else
+                        ble.startRealTimeSpo2();
+                    },
+                  );
+                }),
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return _buildTile(
+                    title: "Live HRV",
+                    icon: Icons.monitor_heart, // Different heart icon
+                    isActive: ble.isMeasuringHrv,
+                    activeColor: Colors.deepPurple,
+                    onTap: () {
+                      if (!ble.isConnected) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Not connected to Ring")));
+                        return;
+                      }
+                      if (ble.isMeasuringHrv)
+                        ble.stopRealTimeHrv();
+                      else
+                        ble.startRealTimeHrv();
+                    },
+                  );
+                }),
+                Consumer<BleService>(builder: (context, ble, child) {
+                  return _buildTile(
+                    title: "Stress Test",
+                    icon: Icons.psychology,
+                    isActive: ble.isMeasuringStress,
+                    activeColor: Colors.purple,
+                    onTap: () {
+                      if (!ble.isConnected) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Not connected to Ring")));
+                        return;
+                      }
+                      if (ble.isMeasuringStress)
+                        ble.stopStressTest();
+                      else
+                        ble.startStressTest();
+                    },
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text("Activity Controls (0x77)",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Divider(),
             Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
                 Consumer<BleService>(builder: (context, ble, child) {
-                  return ElevatedButton(
-                    onPressed: () {
-                      if (ble.isMeasuringStress)
-                        ble.stopStress();
-                      else
-                        ble.startStress();
-                    },
+                  return ElevatedButton.icon(
+                    onPressed: () =>
+                        ble.setActivityState(0x04, 0x01), // Walk Start
+                    icon: const Icon(Icons.directions_walk),
+                    label: const Text("Start Walk"),
                     style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            ble.isMeasuringStress ? Colors.red : Colors.purple),
-                    child: Text(
-                        ble.isMeasuringStress ? "Stop Stress" : "Meas Stress"),
+                        backgroundColor: Colors.orange),
                   );
                 }),
                 Consumer<BleService>(builder: (context, ble, child) {
-                  return ElevatedButton(
-                    onPressed: () {
-                      if (ble.isMeasuringRawPPG)
-                        ble.stopRawPPG();
-                      else
-                        ble.startRawPPG();
-                    },
+                  return ElevatedButton.icon(
+                    onPressed: () =>
+                        ble.setActivityState(0x07, 0x01), // Run Start
+                    icon: const Icon(Icons.directions_run),
+                    label: const Text("Start Run"),
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: ble.isMeasuringRawPPG
-                            ? Colors.red
-                            : Colors.green[700]),
-                    child: Text(ble.isMeasuringRawPPG
-                        ? "Stop Green PPG"
-                        : "Start Green PPG"),
+                        backgroundColor: Colors.orange),
                   );
                 }),
                 Consumer<BleService>(builder: (context, ble, child) {
-                  return ElevatedButton(
-                    onPressed: () {
-                      if (ble.isMeasuringHeartRate)
-                        ble.stopHeartRate();
-                      else
-                        ble.startHeartRate();
-                    },
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: ble.isMeasuringHeartRate
-                            ? Colors.red
-                            : Colors.redAccent),
-                    child:
-                        Text(ble.isMeasuringHeartRate ? "Stop HR" : "Meas HR"),
-                  );
-                }),
-                Consumer<BleService>(builder: (context, ble, child) {
-                  return ElevatedButton(
-                    onPressed: () {
-                      if (ble.isMeasuringSpo2)
-                        ble.stopSpo2();
-                      else
-                        ble.startSpo2();
-                    },
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: ble.isMeasuringSpo2
-                            ? Colors.red
-                            : Colors.blueAccent),
-                    child:
-                        Text(ble.isMeasuringSpo2 ? "Stop SpO2" : "Meas SpO2"),
+                  return ElevatedButton.icon(
+                    onPressed: () => ble.setActivityState(
+                        0x04, 0x04), // End (Type 04 generic)
+                    icon: const Icon(Icons.stop),
+                    label: const Text("End Activity"),
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.grey),
                   );
                 }),
               ],

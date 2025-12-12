@@ -1,0 +1,23 @@
+spo2 detection (monitor every hour)
+off 14:33:34
+on 14:33:38
+
+full day stess moniroting (every 30min)
+off 14:34:00
+on 14:34:04
+
+scheduled hrv monitoring (every hour)
+off 14:34:29
+on 14:34:34
+
+
+full day hr frequency:
+set so:
+5min 14:35:02
+10min 14:35:15
+15min 14:35:36
+20min 14:35:50
+30min 14:36:01
+60min 14:36:10
+off 14:36:18
+

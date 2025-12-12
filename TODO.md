@@ -17,25 +17,25 @@
 
 ## 🚨 High Priority (Critical)
 - [x] **Data Reset Bug:** Fix issue where Steps and HR data resets incorrectly after midnight (00:00) or when staying up late.
-- [ ] **History Sync:** Implement logic to download saved sleep/heart rate data from the ring's flash memory.
+- [x] **History Sync:** Implemented parsers for Stress (`0x37`), SpO2 (`0xBC`), and Steps (`0x43`).
 - [ ] **Local Database:** Set up `hive` or `sqflite` to persist downloaded data so it remains available after closing the app.
-- [ ] **SpO2 Monitoring:** Basic measurement and history sync implemented. (Visualization pending).
+- [x] **SpO2 Monitoring:** Basic measurement and history sync implemented.
 
 ## 🟠 Medium Priority
 - [x] **Sync Time:** Add button to sync phone time to ring (Fixes display issues).
-- [ ] **Settings Page:** Create a dedicated screen for app preferences and device management.
+- [x] **Settings Page:** Dedicated screen created with "Auto Monitoring" and "Paired Devices".
 - [ ] **Auto-Reconnect:** Add logic to attempt reconnection if the ring disconnects unexpectedly (e.g., out of range).
 - [ ] **Bluetooth State:** Show a "Please turn on Bluetooth" prompt if the phone's adapter is disabled.
 
 ## 🟢 Low Priority (Features & UI)
 - [ ] **Step Goal:** Send packet to update the "Daily Step Goal" so the ring's progress circle matches the app.
-- [ ] **User Profile:** Send height/weight/age packets (Required for accurate calorie calculations).
+- [ ] **User Profile:** Send height/weight/age packets (`0x0A` command implemented).
 - [ ] **Splash Screen:** Add a branded launch screen for a professional look.
 - [ ] **Error Handling:** Replace crashes or silent failures with friendly "Toast" error messages.
 - [ ] **Find My Ring:** Implement the command to make the ring vibrate/flash.
 
 ## 🛠️ Code Quality & Maintenance
-- [ ] **Refactor BleService:** Improve timeout handling if the ring doesn't respond to a command.
+- [x] **Refactor BleService:** Added specific timeout safety timers for all sensor commands.
 - [ ] **Linting:** Add `flutter_lints` rules to enforce clean code standards.
 - [ ] **Dark/Light Mode:** Implement logic to respect the system theme.
 

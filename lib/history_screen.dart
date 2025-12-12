@@ -1,3 +1,4 @@
+import 'dart:math'; // For Point
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -153,7 +154,7 @@ class _StepsChartPageState extends State<_StepsChartPage> {
     int currentTotal = 0;
     for (int i = 0; i < sortedSteps.length; i++) {
       final point = sortedSteps[i];
-      currentTotal += point.y;
+      currentTotal += point.y.toInt();
       spots.add(FlSpot(point.x.toDouble(), currentTotal.toDouble()));
     }
 
