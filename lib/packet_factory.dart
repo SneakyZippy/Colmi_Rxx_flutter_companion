@@ -328,11 +328,14 @@ class PacketFactory {
 
   // SpO2 History Sync (Alternative 0xBC)
   static const int cmdSyncSpo2HistoryNew = 0xBC;
-  static const int subCmdSyncSpo2 = 0x2A;
+  // 0x2A was legacy/guessed. 0x2C matches the Notification (73 2C) and Config Command (2C).
+  static const int subCmdSyncSpo2 = 0x2C;
 
   static Uint8List getSpo2LogPacketNew() {
-    // 0xBC 0x2A ...
-    return createPacket(command: cmdSyncSpo2HistoryNew, data: [subCmdSyncSpo2]);
+    // Gadgetbridge: BC <Type> 01 00 FF 00 FF
+    return createPacket(
+        command: cmdSyncSpo2HistoryNew,
+        data: [subCmdSyncSpo2, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
   }
 
   // Stress History Sync (0x37)

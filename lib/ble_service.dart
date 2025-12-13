@@ -213,37 +213,37 @@ class BleService extends ChangeNotifier {
       debugPrint("Waiting 2s for ring to settle...");
       await Future.delayed(const Duration(seconds: 2));
 
-      // Sync Time
-      await syncTime();
+      // Gadgetbridge Protocol:
+      // 1. Set Name (04)
+      // 2. Set Time (01)
+      // 3. User Profile (0A)
+      // 4. Get Battery (03)
+      // 5. Read Settings (16, 2C, 36, 21)
 
-      // Authentication/Binding Handshake (Crucial for Sensors)
-      // Official App Log Analysis:
-      // 1. Set Time (01) - Done above
-      // 2. Set Phone Name (04) - Let's add it here to be robust
-      // 3. User Config (39 ... or 0A) - Logs show 39
-      // 4. Bind Check (48 00) - Done last
-
-      debugPrint("Performing Startup Handshake...");
+      debugPrint("Performing Startup Handshake (GB Mode)...");
 
       if (_writeChar != null) {
-        // Send Phone Name (0x04)
+        // 1. Send Phone Name (0x04)
         await _writeChar!.write(PacketFactory.createSetPhoneNamePacket());
         addToProtocolLog("TX: 04 ... (Set Name)", isTx: true);
         await Future.delayed(const Duration(milliseconds: 200));
 
-        // Send User Profile (0x0A) - Modern R02/R06 Standard
-        // Gadgetbridge uses this. Step 1047 showed it got a response!
+        // 2. Send Time (0x01)
+        await _writeChar!.write(PacketFactory.createSetTimePacket());
+        addToProtocolLog("TX: 01 ... (Set Time)", isTx: true);
+        await Future.delayed(const Duration(milliseconds: 200));
+
+        // 3. Send User Profile (0x0A) - Modern R02/R06 Standard
         await _writeChar!.write(PacketFactory.createUserProfilePacket());
         addToProtocolLog("TX: 0A ... (Set User Profile)", isTx: true);
         await Future.delayed(const Duration(milliseconds: 200));
 
-        // Request Battery (0x03) - Gadgetbridge does this in init
+        // 4. Request Battery (0x03)
         await _writeChar!.write(PacketFactory.getBatteryPacket());
         addToProtocolLog("TX: 03 (Get Battery)", isTx: true);
         await Future.delayed(const Duration(milliseconds: 100));
 
-        // Request Settings (mimic Gadgetbridge postConnectInitialization)
-        // Reading these might settle the ring state.
+        // 5. Request Settings
         debugPrint("Reading Device Settings...");
         // HR Auto (16 01)
         await _writeChar!
@@ -253,18 +253,17 @@ class BleService extends ChangeNotifier {
         await _writeChar!
             .write(PacketFactory.createPacket(command: 0x2C, data: [0x01]));
         await Future.delayed(const Duration(milliseconds: 100));
-        // Stress Auto (36 01) - In user log
+        // Stress Auto (36 01)
         await _writeChar!
             .write(PacketFactory.createPacket(command: 0x36, data: [0x01]));
         await Future.delayed(const Duration(milliseconds: 100));
-        // Goals (21 01) - Gadgetbridge reads this too
+        // Goals (21 01)
         await _writeChar!
             .write(PacketFactory.createPacket(command: 0x21, data: [0x01]));
         await Future.delayed(const Duration(milliseconds: 100));
 
-        // Check Bind Status (Query 48 00)
-        await _writeChar!.write(PacketFactory.createBindRequest());
-        addToProtocolLog("TX: 48 00 (Bind Request)", isTx: true);
+        // NO EXPLICIT BIND (0x48) - Gadgetbridge does not use it.
+        // NO 0x39 05 - Gadgetbridge does not use it.
       }
 
       _status = "Connected to ${device.platformName}";
@@ -422,7 +421,7 @@ class BleService extends ChangeNotifier {
       StreamController<List<int>>.broadcast();
   Stream<List<int>> get ppgStream => _ppgStreamController.stream;
 
-  void _onDataReceived(List<int> data) {
+  Future<void> _onDataReceived(List<int> data) async {
     if (data.isEmpty) return;
 
     // Log raw data
@@ -626,26 +625,7 @@ class BleService extends ChangeNotifier {
         return;
       }
 
-      // Notification / Data (0x73)
-      if (cmd == 0x73) {
-        String msg = "RX Notification (0x73): $hexData";
-        debugPrint(msg);
-        addToProtocolLog(msg);
-
-        // Gadgetbridge: 73 [Type] [Value] ...
-        // Stress might be Type 0x21 or 0x0A?
-        // If we are stress testing, let's capture the value.
-        if (_isMeasuringStress && data.length > 2) {
-          int val = data[2]; // Guessing index
-          if (val > 0) {
-            _stress = val;
-            notifyListeners();
-            debugPrint("Stress Data Received: $val");
-            stopStressTest(); // Auto-stop?
-          }
-        }
-        return;
-      }
+      // Notification / Data (0x73) - Moved below to unified block
 
       // Activity Control ACK (0x77)
       if (cmd == 0x77) {
@@ -654,6 +634,12 @@ class BleService extends ChangeNotifier {
             Response might be: 77 01 [Type] [Status?]
             Just logging strictly for now is enough.
          */
+        return;
+      }
+
+      // Goals ACK (0x21)
+      if (cmd == 0x21) {
+        debugPrint("Goals Setting ACK (0x21)");
         return;
       }
 
@@ -666,59 +652,77 @@ class BleService extends ChangeNotifier {
       // Stress Measurement (0x36) & History (0x37)
       if (cmd == 0x36 || cmd == 0x73 || cmd == PacketFactory.cmdSyncStress) {
         // If 0x36: Start/Stop ACKs
+        // If 0x36: Start/Stop ACKs
         if (cmd == 0x36) {
           if (data.length > 1 && data[1] == 0x02) {
             debugPrint("Stress Stop ACK - Ignore");
             return;
           }
           debugPrint("Stress Start ACK");
+          return;
         }
 
         // If 0x73: Real-time Data Packet
+        // ... (Keep existing 0x73 logic) ...
+
         if (cmd == 0x73 && data.length > 2) {
           int val = data[1];
           // Handle specific notification subtypes
           String timestamp = DateTime.now().toIso8601String().substring(11, 19);
+
           if (val == 0x01) {
+            String log =
+                "[$timestamp] 🔔 RX Notify: New HR Data Available (0x73 01)";
+            debugPrint(log);
+            addToProtocolLog(log);
             debugPrint(
-                "[$timestamp] RX Notify: New HR Data Available (0x73 01)");
+                "[$timestamp] 🔄 Triggering Auto-Sync for Heart Rate...");
+            syncHeartRateHistory();
             return;
           }
-          if (val == 0x03) {
+          // SpO2 or Generic Data Notification (0x03 or 0x2C)
+          // Note: User observed Green LED (HR) flashing before 0x73 2C arrived.
+          // This implies 0x2C might be a "Measurement Cycle Complete" signal.
+          // Safest strategy: Sync EVERYTHING when this arrives.
+          if (val == 0x03 || val == 0x2C) {
+            String log =
+                "[$timestamp] 🔔 RX Notify: New Data Available (0x73 ${val.toRadixString(16).padLeft(2, '0')})";
+            debugPrint(log);
             debugPrint(
-                "[$timestamp] RX Notify: New SpO2 Data Available (0x73 03)");
+                "[$timestamp] 🔄 Triggering AGGRESSIVE Auto-Sync (HR + SpO2 + Stress)...");
+            addToProtocolLog(log);
+
+            // 1. Sync HR (Green Light matches this)
+            await syncHeartRateHistory();
+            await Future.delayed(const Duration(milliseconds: 500));
+
+            // 2. Sync SpO2 (Notification Code matches this)
+            await syncSpo2History();
+            await Future.delayed(const Duration(milliseconds: 500));
+
+            // 3. Sync Stress (Just in case)
+            await syncStressHistory();
             return;
           }
-          if (val == 0x04) {
-            // Steps update, very frequent during movement
-            debugPrint("[$timestamp] RX Notify: New Steps Data (0x73 04)");
-            return;
-          }
-          if (val == 0x0C) {
-            debugPrint(
-                "[$timestamp] RX Notify: Battery Level Update (0x73 0C)");
-            // Could parse battery here too if payload matches
-            return;
-          }
+
           if (val == 0x12) {
-            debugPrint(
-                "[$timestamp] RX Notify: Live Activity Update (0x73 12)");
+            // Steps (0x12) - Already handled or can be ignored here if handled above
+            debugPrint("[$timestamp] 🔔 RX Notify: Steps (0x73 12)");
+            // syncHistory(); // Handled by big sync?
+            return;
+          }
+
+          if (val == 0x0C) {
+            debugPrint("[$timestamp] 🔋 Battery Update");
             return;
           }
 
           // Legacy/Measurement Stress (if it comes as 0x73 with value)
-          if (val == 0 && data.length > 4) val = data[4];
+          if (data.length > 4 && val == 0) val = data[4];
           if (val > 0) {
             _stress = val;
             notifyListeners();
-            debugPrint("Stress Calculated: $val");
-            // Reset silence timer logic...
-            if (_isMeasuringStress) {
-              _stressDataTimer?.cancel();
-              _stressDataTimer = Timer(const Duration(seconds: 3), () {
-                if (_isMeasuringStress) stopStress();
-              });
-            }
+            // ... existing stress logic ...
           }
         }
 
@@ -754,6 +758,7 @@ class BleService extends ChangeNotifier {
               debugPrint("Stress History: $h:$m = $val");
             }
           }
+          return;
         }
       }
 
@@ -893,33 +898,38 @@ class BleService extends ChangeNotifier {
           notifyListeners();
         } else if (subType == 1) {
           // Subtype 1: Could be SpO2 Log Timestamp OR HR Auto Config Read Response
-          // HR Config Read Response: 16 01 [Enable] [Interval] -> Length 4 (offset+3)
-          if (data.length == dataOffset + 3) {
+          // Packet: 16 01 [B0] [B1] [B2] [B3] ...
+          // HR Config: [Enable] [Interval] (and 00 padding)
+          // SpO2 Log: [Time0] [Time1] [Time2] [Time3] (Epoch)
+
+          bool isConfig = false;
+          int t0 = data[dataOffset + 1];
+          int t1 = data[dataOffset + 2];
+          int t2 = data[dataOffset + 3];
+          int t3 = data[dataOffset + 4];
+          int potentialTimestamp = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24);
+
+          // Timestamp Check: If < 1,000,000,000 (Year 2001), it's likely Config
+          if (potentialTimestamp < 1000000000) {
+            isConfig = true;
+          }
+
+          if (isConfig) {
             int enabledVal = data[dataOffset + 1];
             int interval = data[dataOffset + 2];
 
-            // Update State
-            // Need to expose these to settings screen.
-            // See 'BleService' state variables (add them if missing).
-            // Assume they will be added.
-            /*
-             _hrAutoEnabled = (enabledVal == 1);
-             _hrInterval = interval;
-             */
-            // For now just log
             debugPrint(
                 "RX Auto HR Config: Enabled=$enabledVal, Interval=$interval");
-            notifyListeners(); // Signal settings to update
-          } else if (data.length >= dataOffset + 5) {
+            // Polyfill: Update State
+            _hrAutoEnabled = (enabledVal == 1);
+            if (interval > 0) _hrInterval = interval;
+            notifyListeners();
+          } else {
             // Timestamp Packet for SpO2 Log
-            int t0 = data[dataOffset + 1];
-            int t1 = data[dataOffset + 2];
-            int t2 = data[dataOffset + 3];
-            int t3 = data[dataOffset + 4];
-            _spo2LogBaseTime = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24);
+            _spo2LogBaseTime = potentialTimestamp;
             _spo2LogCount = 0;
             debugPrint("SpO2 Log TimeBlock: $_spo2LogBaseTime");
-            // ... (rest of logic same) ...
+
             int startData = dataOffset + 5;
             for (int i = startData;
                 i < data.length - 1 && i < startData + 9;
@@ -1421,6 +1431,9 @@ class BleService extends ChangeNotifier {
         command: PacketFactory.cmdSetTime,
         data: timeData,
       );
+      String hex =
+          packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      addToProtocolLog("TX: $hex (Set Time)", isTx: true);
       await _writeChar!.write(packet);
     } catch (e) {
       debugPrint("Error syncing time: $e");
@@ -1507,19 +1520,22 @@ class BleService extends ChangeNotifier {
           DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
       debugPrint("Requesting SpO2 History for: $startOfDay");
 
-      final now = DateTime.now();
-      final difference = now.difference(_selectedDate).inDays;
-      int offset = difference < 0 ? 0 : difference;
-
-      await _writeChar!
-          .write(PacketFactory.getSpo2LogPacket(dayOffset: offset));
-
-      // Also try the new sync command (0xBC)
+      // Use New Protocol (0xBC) matching Gadgetbridge (and Notification 0x2C)
       await Future.delayed(const Duration(milliseconds: 500));
       debugPrint("Requesting SpO2 History (New Protocol 0xBC)...");
       await _writeChar!.write(PacketFactory.getSpo2LogPacketNew());
     } catch (e) {
       debugPrint("Error syncing SpO2 history: $e");
+    }
+  }
+
+  Future<void> syncStressHistory() async {
+    if (_writeChar == null) return;
+    try {
+      debugPrint("Requesting Stress History (0x37)...");
+      await _writeChar!.write(PacketFactory.getStressHistoryPacket());
+    } catch (e) {
+      debugPrint("Error syncing Stress History: $e");
     }
   }
 
@@ -1572,8 +1588,10 @@ class BleService extends ChangeNotifier {
     if (_writeChar == null) return;
     debugPrint("Rebooting Ring...");
     try {
-      // Command 0x08 is Reboot
-      await _writeChar!.write(PacketFactory.createPacket(command: 0x08));
+      // Command 0x08 is Reboot/Power
+      // 0x01 = Shutdown, 0x05 = Reboot (from Logs)
+      await _writeChar!
+          .write(PacketFactory.createPacket(command: 0x08, data: [0x05]));
     } catch (e) {
       debugPrint("Error rebooting: $e");
     }

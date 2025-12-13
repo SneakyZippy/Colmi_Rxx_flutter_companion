@@ -46,27 +46,9 @@
 
 ## 3. 🧠 Quirks & Lessons Learned
 
-### The "90-Second Rule" (Stress)
-*   **Symptom:** You press "Measure Stress", logs show "Success", but **nothing happens** for over a minute.
-*   **Reality:** The ring captures HRV data silently (perhaps using invisible IR light) for ~90 seconds. It buffers the calculation and sends a **single** packet (`0x73`) at the end.
-*   **Fix:** Don't time out early. Set safety timers to **120 seconds**.
 
-### The "Ghost Start" (Heart Rate)
-*   **Symptom:** You stop HR, but it immediately starts again (Green light flickers back on).
-*   **Cause:** Using `0x69 [Type] 0x00` deals with "Real-Time Request" logic which the ring interprets as "Start".
-*   **Fix:** Never use 0x69 to stop. Use **0x16** (Periodic Disable) instead.
 
-### Background Interference
-*   **Symptom:** Sensors fail to start (Light stays off) despite valid commands.
-*   **Cause:** Another app (e.g., original "Da Fit" or "Colmi" app) running in background. Service: `NtQueueManager`.
-*   **Fix:** Force Stop / Uninstall other ring apps. **Reboot Phone** to kill zombie BLE services.
 
-### Hardware Freeze
-*   **Symptom:** App sends Start, Ring ACKs, but **no light ever appears**.
-*   **Cause:** Internal firmware state confusion.
-*   **Fix:** Send **Reboot Command `0x08`** or place on charger to reset.
-
----
 
 ## 4. 🧩 Verified Gadgetbridge Protocol Details
 

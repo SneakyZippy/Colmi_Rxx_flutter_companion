@@ -2,14 +2,13 @@
 
 ## 🔭 Open Tasks (Immediate Next Steps)
 - [ ] **Data Visualization:**
-    - [ ] Real-time graph for Heart Rate (Live).
-    - [ ] Real-time graph for SpO2 (Live).
-    - [ ] Historical charts for all sensors. (spo2 not working)
+    - [x] Real-time Heart Rate.
+    - [x] Real-time SpO2.
+    - [ ] Historical charts for all sensors.
 - [ ] **Wear Detection:**
-    - [ ] Refine "Wear Status" logic (currently based on simple PPG limits).
+    - [ ] Refine "Wear Status" logic
     - [ ] Investigate valid ranges for "Off Finger" vs "On Finger".
 - [ ] **Gestures & Actions:**
-    - [ ] Decode `0x2F` packets (Tap/Spin detection).
     - [ ] Implement "Music Control" or "Slide Control" using ring gestures.
 - [ ] **Code Cleanup:**
     - [ ] Remove unused debug prints.

@@ -65,7 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Text("Measure every ${bleService.hrInterval} minutes"),
                   trailing: DropdownButton<int>(
                     value: bleService.hrInterval,
-                    items: [5, 10, 15, 30, 45, 60].map((int value) {
+                    items: [1, 5, 10, 15, 30, 45, 60].map((int value) {
                       return DropdownMenuItem<int>(
                         value: value,
                         child: Text("$value min"),
@@ -155,6 +155,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (confirm) {
                 await bleService.factoryReset();
               }
+            },
+          ),
+          ListTile(
+            title: const Text("Reboot Ring"),
+            subtitle:
+                const Text("Restarts the ring (0x08). Fixes stuck sensors."),
+            leading: const Icon(Icons.restart_alt),
+            onTap: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Rebooting Ring...")));
+              await bleService.rebootRing();
             },
           ),
           const Padding(
