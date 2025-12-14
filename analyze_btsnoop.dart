@@ -178,8 +178,7 @@ Future<void> parseBtsnoop(String path, {String? filter}) async {
                 .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
                 .join("");
 
-            if (hex.startsWith("19") || hex.startsWith("4801")) {
-              // 19 = Login?, 4801 = Bind Action?
+            if (hex.length > 0) {
               print(
                   "[$timeStr] #$packetCount $name [H:0x${attHandle.toRadixString(16)}] : $hex");
             }

@@ -5,6 +5,7 @@ import 'dart:math'; // For Point
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'packet_factory.dart';
 
@@ -56,6 +57,10 @@ class BleService extends ChangeNotifier {
 
   final List<String> _protocolLog = [];
   List<String> get protocolLog => List.unmodifiable(_protocolLog);
+
+  void _log(String message) {
+    debugPrint("[${DateTime.now().toString().substring(11, 19)}] $message");
+  }
 
   void addToProtocolLog(String message, {bool isTx = false}) {
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
@@ -261,6 +266,9 @@ class BleService extends ChangeNotifier {
         await _writeChar!
             .write(PacketFactory.createPacket(command: 0x21, data: [0x01]));
         await Future.delayed(const Duration(milliseconds: 100));
+
+        // Restore/Sync Persisted App Settings (SpO2, HRV, etc.)
+        await syncSettingsToRing();
 
         // NO EXPLICIT BIND (0x48) - Gadgetbridge does not use it.
         // NO 0x39 05 - Gadgetbridge does not use it.
@@ -627,6 +635,47 @@ class BleService extends ChangeNotifier {
 
       // Notification / Data (0x73) - Moved below to unified block
 
+      // HR History (0x15) - Added based on Gadgetbridge Logic
+      if (cmd == 0x15) {
+        if (data.length < 2) return;
+        int packetNr = data[1];
+        if (packetNr == 0xFF) {
+          debugPrint("HR History Sync Complete/Empty");
+          return;
+        }
+
+        // Gadgetbridge Logic for 0x15:
+        // Packet 1 starts at index 6 (bytes 2-5 are timestamp)
+        // Others start at index 2
+        // Interval is 5 mins
+        int startIndex = (packetNr == 1) ? 6 : 2;
+        int minutesOffset = 0;
+        if (packetNr > 1) {
+          minutesOffset = 9 * 5; // Packet 1 has 9 values (indices 6..14)
+          minutesOffset +=
+              (packetNr - 2) * 13 * 5; // Others have 13 values (indices 2..14)
+        }
+
+        _log("HR History Packet $packetNr (StartIdx: $startIndex)");
+
+        for (int i = startIndex; i < data.length - 1; i++) {
+          int val = data[i];
+          if (val > 0) {
+            int minuteOfDay = minutesOffset + (i - startIndex) * 5;
+            int h = minuteOfDay ~/ 60;
+            int m = minuteOfDay % 60;
+            _log("HR History: $h:$m = $val");
+
+            // Add to History List for Graph
+            // Note: This overrides simple list logic, might need deduplication
+            _hrHistory.add(Point(minuteOfDay, val));
+          }
+        }
+        // Notify UI to update graph
+        notifyListeners();
+        return;
+      }
+
       // Activity Control ACK (0x77)
       if (cmd == 0x77) {
         debugPrint("Activity Control ACK (0x77): $hexData");
@@ -653,12 +702,21 @@ class BleService extends ChangeNotifier {
       if (cmd == 0x36 || cmd == 0x73 || cmd == PacketFactory.cmdSyncStress) {
         // If 0x36: Start/Stop ACKs
         // If 0x36: Start/Stop ACKs
+        // If 0x36: Config Read Response OR Start/Stop ACKs
         if (cmd == 0x36) {
-          if (data.length > 1 && data[1] == 0x02) {
-            debugPrint("Stress Stop ACK - Ignore");
+          if (data.length > 2 && data[1] == 0x01) {
+            // Read Response: 36 01 [Enable]
+            int enabledVal = data[2];
+            debugPrint("RX Auto Stress Config: $enabledVal");
+            _stressAutoEnabled = (enabledVal != 0);
+            notifyListeners();
             return;
           }
-          debugPrint("Stress Start ACK");
+          if (data.length > 1 && data[1] == 0x02) {
+            debugPrint("Stress Op ACK (Start/Stop)");
+            return;
+          }
+          debugPrint("Stress Unknown 0x36 Packet: $hexData");
           return;
         }
 
@@ -736,6 +794,13 @@ class BleService extends ChangeNotifier {
           }
 
           // Gadgetbridge Logic:
+          // Packet 0 is Header (Total Packets = data[2])
+          if (packetNr == 0) {
+            int totalPackets = data.length > 2 ? data[2] : 0;
+            debugPrint("Stress History Header: Total Packets = $totalPackets");
+            return;
+          }
+
           // Packet 1 starts at index 3, others at index 2
           // Interval is 30 mins
           int startIndex = (packetNr == 1) ? 3 : 2;
@@ -756,6 +821,7 @@ class BleService extends ChangeNotifier {
               int h = minuteOfDay ~/ 60;
               int m = minuteOfDay % 60;
               debugPrint("Stress History: $h:$m = $val");
+              _stressHistory.add(Point(minuteOfDay, val));
             }
           }
           return;
@@ -847,8 +913,11 @@ class BleService extends ChangeNotifier {
         if (data.length > 2 && data[1] == 0x01) {
           // Read Response: 2C 01 [Enable]
           int enabledVal = data[2];
-          debugPrint("RX Auto SpO2 Config: $enabledVal");
-          // _spo2AutoEnabled = (enabledVal == 1);
+          String rawHex =
+              data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+          debugPrint("RX Auto SpO2 Config: $enabledVal (RAW: $rawHex)");
+          _spo2AutoEnabled = (enabledVal != 0);
+          notifyListeners();
         } else {
           debugPrint("SpO2 Auto Config ACK (0x2C)");
         }
@@ -861,7 +930,7 @@ class BleService extends ChangeNotifier {
           // Read Response: 38 01 [Enable]
           int enabledVal = data[2];
           debugPrint("RX Auto HRV Config: $enabledVal");
-          _hrvAutoEnabled = (enabledVal == 1);
+          _hrvAutoEnabled = (enabledVal != 0);
           notifyListeners();
         } else {
           debugPrint("HRV Auto Config ACK (0x38): $hexData");
@@ -918,10 +987,12 @@ class BleService extends ChangeNotifier {
             int enabledVal = data[dataOffset + 1];
             int interval = data[dataOffset + 2];
 
+            String rawHex =
+                data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
             debugPrint(
-                "RX Auto HR Config: Enabled=$enabledVal, Interval=$interval");
+                "RX Auto HR Config: Enabled=$enabledVal, Interval=$interval (RAW: $rawHex)");
             // Polyfill: Update State
-            _hrAutoEnabled = (enabledVal == 1);
+            _hrAutoEnabled = (enabledVal != 0);
             if (interval > 0) _hrInterval = interval;
             notifyListeners();
           } else {
@@ -1146,13 +1217,16 @@ class BleService extends ChangeNotifier {
         dt.month == _selectedDate.month &&
         dt.day == _selectedDate.day;
 
+    debugPrint(
+        "[DEBUG] HR LOG CANDIDATE: $dt = $hrValue BPM (Selected: $_selectedDate)");
+
     if (isSameDay) {
       int minutesFromMidnight = dt.hour * 60 + dt.minute;
       debugPrint("Adding HR Point: $dt = $hrValue BPM");
       _hrHistory.add(Point(minutesFromMidnight, hrValue));
     } else {
       // Just log it, don't error
-      debugPrint("Ignored HR Point (Diff Day): $dt");
+      debugPrint("[DEBUG] DROPPED HR Point (Diff Day): $dt vs $_selectedDate");
     }
   }
 
@@ -1172,12 +1246,16 @@ class BleService extends ChangeNotifier {
         dt.month == _selectedDate.month &&
         dt.day == _selectedDate.day;
 
+    debugPrint(
+        "[DEBUG] SpO2 LOG CANDIDATE: $dt = $val % (Selected: $_selectedDate)");
+
     if (isSameDay) {
       int minutesFromMidnight = dt.hour * 60 + dt.minute;
       debugPrint("Adding SpO2 Point: $dt = $val %");
       _spo2History.add(Point(minutesFromMidnight, val));
     } else {
-      debugPrint("Ignored SpO2 Point (Diff Day): $dt");
+      debugPrint(
+          "[DEBUG] DROPPED SpO2 Point (Diff Day): $dt vs $_selectedDate");
     }
   }
 
@@ -1229,13 +1307,12 @@ class BleService extends ChangeNotifier {
     if (_writeChar == null) return;
 
     try {
-      // 1. Disable Periodic Monitoring (Ensure LED off)
-      // Note: We used to send 0x69 0x01 0x00 here, but that seems to RE-START the sensor!
-      // So we ONLY send the Disable command (0x16 0x02).
+      // 1. Stop Real-time Measurement (0x6A 0x01 0x00)
+      // Do NOT send 0x16 0x02 0x00 (disableHeartRate) as it kills the Auto HR schedule!
 
-      List<int> p2 = PacketFactory.disableHeartRate();
+      List<int> p2 = PacketFactory.stopHeartRate();
       final hex2 = p2.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-      addToProtocolLog(hex2 + " (Disable HR)", isTx: true);
+      addToProtocolLog(hex2 + " (Stop Real-time HR)", isTx: true);
       await _writeChar!.write(p2);
     } catch (e) {
       debugPrint("Error sending stop HR: $e");
@@ -1296,15 +1373,9 @@ class BleService extends ChangeNotifier {
 
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // 2. Disable Periodic (Old Method, just in case)
-      List<Uint8List> packets = PacketFactory.stopSpo2();
-      for (var packet in packets) {
-        addToProtocolLog(
-            "${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')} (Disable SpO2)",
-            isTx: true);
-        await _writeChar!.write(packet);
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
+      // 2. Disable Periodic (Old Method) -- REMOVED
+      // Sending 0x2C 0x02 0x00 disables Auto SpO2 background monitoring!
+      // We rely on 0x6A 0x03 0x00 (RealTime Stop) above.
 
       // Also send Heart Rate Stop (as a "Master Stop")
       Uint8List p2 = PacketFactory.stopHeartRate();
@@ -1450,6 +1521,7 @@ class BleService extends ChangeNotifier {
     // Let's clear current data to avoid confusion
     _hrHistory.clear();
     _stepsHistory.clear();
+    _stressHistory.clear();
     _lastLog = "Date changed to $date";
     notifyListeners();
   }
@@ -1471,6 +1543,16 @@ class BleService extends ChangeNotifier {
 
       List<int> packet = PacketFactory.getStepsPacket(dayOffset: offset);
       await _writeChar!.write(packet);
+
+      // Explicitly chain other syncs to ensure they run even if one returns empty/early
+      await Future.delayed(const Duration(seconds: 2));
+      await syncHeartRateHistory();
+
+      await Future.delayed(const Duration(seconds: 2));
+      await syncSpo2History();
+
+      await Future.delayed(const Duration(seconds: 2));
+      await syncStressHistory();
     } catch (e) {
       debugPrint("Error syncing history: $e");
     }
@@ -1489,6 +1571,10 @@ class BleService extends ChangeNotifier {
   // Steps History as Points (TimeIndex, Steps)
   final List<Point> _stepsHistory = [];
   List<Point> get stepsHistory => _stepsHistory;
+
+  // Stress History as Points (Time, Value)
+  final List<Point> _stressHistory = [];
+  List<Point> get stressHistory => _stressHistory;
 
   Future<void> getBatteryLevel() async {
     if (_writeChar == null) return;
@@ -1610,8 +1696,16 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> syncAllData() async {
-    await syncTime();
+    // REMOVED: await syncTime();
+    // Sending SetTime (0x01) on every sync might reset the internal 5-minute timer on the ring,
+    // preventing it from ever taking a measurement if the user syncs frequently.
+
     await getBatteryLevel();
+
+    // Ensure settings are applied (in case they were lost or disabled)
+    await syncSettingsToRing();
+    await Future.delayed(const Duration(seconds: 1));
+
     await syncHistory();
     await syncHeartRateHistory();
     await syncSpo2History();
@@ -1640,6 +1734,7 @@ class BleService extends ChangeNotifier {
     _heartRate = 0;
     _batteryLevel = 0;
     _hrHistory.clear();
+    _stressHistory.clear();
   }
 
   // --- Unified Monitoring & Feature Controls ---
@@ -1847,14 +1942,31 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     if (_writeChar == null) return;
-    // CMD: 0x16
-    // Sub: 0x02 (Write)
-    // Enabled: 0x01 (On) or 0x02 (Off) - Note: Gadgetbridge says 0x01 is enabled.
-    // Interval: Minutes (5, 10, 15, 30, 45, 60)
-    int enabledVal = minutes > 0 ? 0x01 : 0x02;
+
+    // Use PacketFactory to create the proper 16-byte valid packet
+    // CMD: 0x16, Sub: 0x02, Enabled: 0x01/0x00, Interval
+    Uint8List packet =
+        PacketFactory.enableHeartRate(interval: minutes > 0 ? minutes : 5);
+
+    // Note: If minutes == 0, we might want to disable it.
+    // PacketFactory.enableHeartRate currently assumes Enabled=0x01.
+    // Let's modify PacketFactory if needed, but for now assuming we only call this with > 0 for enable.
+    // To disable, minutes=0. PacketFactory sends enabled=0x01 always in current implementation??
+    // Let's check PacketFactory implementation again.
+    // It takes `interval` but sends `0x02, 0x01, interval`. Always Enabled=1.
+    // We should fix PacketFactory or build manually with CHECKSUM here.
+    // Let's build manually using PacketFactory.createPacket for flexibility.
+
+    int enabledVal = minutes > 0 ? 0x01 : 0x00;
     int intervalVal = minutes > 0 ? minutes : 0;
 
-    List<int> packet = [0x16, 0x02, enabledVal, intervalVal];
+    packet = PacketFactory.createPacket(
+        command: 0x16, data: [0x02, enabledVal, intervalVal]);
+
+    // Save to Prefs
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('hrInterval', minutes);
+
     final hex =
         packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
     // Log as TX
@@ -1874,10 +1986,10 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     if (_writeChar == null) return;
-    // CMD: 0x2C, Sub: 0x02, Enable(1)/Disable(0) ??
-    // Let's assumne 0x01=On, 0x00=Off for now based on typical Colmi toggle behavior.
     int val = enabled ? 0x01 : 0x00;
-    List<int> packet = [0x2C, 0x02, val];
+    // CMD: 0x2C
+    Uint8List packet =
+        PacketFactory.createPacket(command: 0x2C, data: [0x02, val]);
 
     final hex =
         packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
@@ -1886,6 +1998,9 @@ class BleService extends ChangeNotifier {
     try {
       await _writeChar!.write(packet);
       debugPrint("Sent Auto SpO2 Config: $enabled");
+      // Save to Prefs
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('spo2Enabled', enabled);
     } catch (e) {
       debugPrint("Error setting Auto SpO2: $e");
     }
@@ -1897,9 +2012,10 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     if (_writeChar == null) return;
-    // CMD: 0x36, Sub: 0x02, Enable(1)/Disable(0)
     int val = enabled ? 0x01 : 0x00;
-    List<int> packet = [0x36, 0x02, val];
+    // CMD: 0x36
+    Uint8List packet =
+        PacketFactory.createPacket(command: 0x36, data: [0x02, val]);
 
     final hex =
         packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
@@ -1908,6 +2024,9 @@ class BleService extends ChangeNotifier {
     try {
       await _writeChar!.write(packet);
       debugPrint("Sent Auto Stress Config: $enabled");
+      // Save to Prefs
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('stressEnabled', enabled);
     } catch (e) {
       debugPrint("Error setting Auto Stress: $e");
     }
@@ -1915,17 +2034,21 @@ class BleService extends ChangeNotifier {
 
   Future<void> readAutoSettings() async {
     if (_writeChar == null) return;
-    debugPrint("Reading Auto Settings...");
+    _log("Reading Auto Settings...");
     // 16 01: Read HR
+    _log("Requesting Auto HR Settings...");
     await _writeChar!.write([0x16, 0x01]);
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 300));
     // 2C 01: Read SpO2
+    _log("Requesting Auto SpO2 Settings...");
     await _writeChar!.write([0x2C, 0x01]);
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 300));
     // 36 01: Read Stress
+    _log("Requesting Auto Stress Settings...");
     await _writeChar!.write([0x36, 0x01]);
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 300));
     // 38 01: Read HRV
+    _log("Requesting Auto HRV Settings...");
     await _writeChar!.write([0x38, 0x01]);
   }
 
@@ -1935,9 +2058,10 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     if (_writeChar == null) return;
-    // CMD: 0x38, Sub: 0x02, Enable(1)/Disable(0) - Found in user logs
     int val = enabled ? 0x01 : 0x00;
-    List<int> packet = [0x38, 0x02, val];
+    // CMD: 0x38
+    Uint8List packet =
+        PacketFactory.createPacket(command: 0x38, data: [0x02, val]);
 
     final hex =
         packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
@@ -1946,8 +2070,50 @@ class BleService extends ChangeNotifier {
     try {
       await _writeChar!.write(packet);
       debugPrint("Sent Auto HRV Config: $enabled");
+      // Save to Prefs
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('hrvEnabled', enabled);
     } catch (e) {
       debugPrint("Error setting Auto HRV: $e");
     }
+  }
+
+  /// Restores settings from SharedPreferences and applies them to the ring.
+  Future<void> syncSettingsToRing() async {
+    _log("🔄 Syncing Settings from App to Ring...");
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. HR
+    int? hrInterval = prefs.getInt('hrInterval');
+    if (hrInterval != null) {
+      _log("Restoring HR Interval: $hrInterval mins");
+      await setAutoHrInterval(hrInterval);
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    // 2. SpO2
+    bool? spo2Obj = prefs.getBool('spo2Enabled');
+    if (spo2Obj != null) {
+      _log("Restoring SpO2: $spo2Obj");
+      await setAutoSpo2(spo2Obj);
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    // 3. Stress
+    bool? stressObj = prefs.getBool('stressEnabled');
+    if (stressObj != null) {
+      _log("Restoring Stress: $stressObj");
+      await setAutoStress(stressObj);
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    // 4. HRV
+    bool? hrvObj = prefs.getBool('hrvEnabled');
+    if (hrvObj != null) {
+      _log("Restoring HRV: $hrvObj");
+      await setAutoHrv(hrvObj);
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    _log("✅ Settings Sync Complete");
   }
 } // End Class BleService

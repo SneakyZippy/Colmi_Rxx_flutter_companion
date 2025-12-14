@@ -4,6 +4,10 @@
 
 - LOG_FINDINGS_SUMMARY are the informations we gathered out of btsniffing, there are .log and .txt files that work together to show the information aswell as the timestamp.
 
+- gadgetbridgeDiff.txt are the most important file for us, it shows the differences between the original gadgetbridge and the one we are using.
+
+
+
 Gadgetbridge:
 Support for this line of smart rings was added with
 pull request 3896. The official app for this hardware, QRing, supports many other cheap smart rings as well. Those are expected to be supported by Gadgetbridge as well, so if you come across one, please let us know. 

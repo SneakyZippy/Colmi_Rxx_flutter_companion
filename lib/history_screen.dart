@@ -16,7 +16,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Consumer<BleService>(
@@ -64,6 +64,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Tab(text: 'Steps'),
               Tab(text: 'Heart Rate'),
               Tab(text: 'SpO2'),
+              Tab(text: 'Stress'),
             ],
           ),
         ),
@@ -76,6 +77,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 _StepsChartPage(ble: ble),
                 _HrChartPage(ble: ble),
                 _Spo2ChartPage(ble: ble),
+                _StressPage(ble: ble),
               ],
             );
           },
@@ -961,6 +963,260 @@ class _Spo2ChartPageState extends State<_Spo2ChartPage> {
                                 ),
                                 child: Text(
                                   "$timeStr\n${nearestSpot.y.toInt()}%", // Shows cumulative
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ],
+                ],
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StressPage extends StatefulWidget {
+  final BleService ble;
+  const _StressPage({required this.ble});
+
+  @override
+  State<_StressPage> createState() => _StressPageState();
+}
+
+class _StressPageState extends State<_StressPage> {
+  // Stress is 0-1440 (Minutes)
+  double _minX = 0;
+  double _maxX = 1440;
+  bool _initializedZoom = false;
+  double? _touchX;
+
+  void _onViewChange(double minX, double maxX) {
+    setState(() {
+      _minX = minX;
+      _maxX = maxX;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ble = widget.ble;
+    if (ble.stressHistory.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text("No Stress History Data"),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () => ble.syncStressHistory(),
+              child: const Text("Sync Stress History"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    List<FlSpot> spots = [];
+    for (int i = 0; i < ble.stressHistory.length; i++) {
+      final point = ble.stressHistory[i];
+      spots.add(FlSpot(point.x.toDouble(), point.y.toDouble()));
+    }
+    spots.sort((a, b) => a.x.compareTo(b.x));
+
+    // Auto-Zoom
+    if (!_initializedZoom && spots.isNotEmpty) {
+      double minX = spots.first.x;
+      double maxX = spots.last.x;
+      // Relaxed Zoom: +/- 2 hours (120 min)
+      _minX = (minX - 120).clamp(0, 1440);
+      _maxX = (maxX + 120).clamp(0, 1440);
+
+      // Ensure at least 4 hours (240 min) visible
+      if (_maxX - _minX < 240) {
+        double center = (minX + maxX) / 2;
+        _minX = (center - 120).clamp(0, 1440);
+        _maxX = (center + 120).clamp(0, 1440);
+      }
+      _initializedZoom = true;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Stress Level (0-100)",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: "Reset Zoom",
+                onPressed: () {
+                  setState(() {
+                    _minX = 0;
+                    _maxX = 1440;
+                  });
+                },
+              ),
+            ],
+          ),
+          Expanded(
+            child: LayoutBuilder(builder: (context, constraints) {
+              double chartHeight = constraints.maxHeight - 22;
+
+              return Stack(
+                children: [
+                  _ZoomableChart(
+                    minX: _minX,
+                    maxX: _maxX,
+                    maxLimit: 1440,
+                    onViewChange: _onViewChange,
+                    onTouchUpdate: (relX) {
+                      setState(() {
+                        _touchX = relX;
+                      });
+                    },
+                    onTouchEnd: () {
+                      setState(() {
+                        _touchX = null;
+                      });
+                    },
+                    child: LineChart(
+                      LineChartData(
+                        lineTouchData: LineTouchData(enabled: false),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: spots,
+                            isCurved: true,
+                            color: Colors.purple,
+                            dotData: const FlDotData(show: false),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              color: Colors.purple.withValues(alpha: 0.3),
+                            ),
+                          ),
+                        ],
+                        titlesData: FlTitlesData(
+                          leftTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 22,
+                              interval: (_maxX - _minX) / 6,
+                              getTitlesWidget: (value, meta) {
+                                int minutesFromMidnight = value.toInt();
+                                if (minutesFromMidnight < 0 ||
+                                    minutesFromMidnight >= 1440) {
+                                  return const Text('');
+                                }
+                                int h = minutesFromMidnight ~/ 60;
+                                int m = minutesFromMidnight % 60;
+                                String text =
+                                    "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: Text(text,
+                                      style: const TextStyle(fontSize: 10)),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        minX: _minX,
+                        maxX: _maxX,
+                        minY: 0,
+                        maxY: 100, // Stress Max
+                      ),
+                    ),
+                  ),
+                  if (_touchX != null && spots.isNotEmpty) ...[
+                    Builder(builder: (context) {
+                      // 1. Calculations
+                      double chartWidth = _maxX - _minX;
+                      double touchValue = _minX + (_touchX! * chartWidth);
+
+                      // Find nearest Point
+                      FlSpot nearestSpot = spots.first;
+                      double minDist = 999999;
+                      for (var spot in spots) {
+                        double d = (spot.x - touchValue).abs();
+                        if (d < minDist) {
+                          minDist = d;
+                          nearestSpot = spot;
+                        }
+                      }
+
+                      // 2. Visual Dot Position
+                      // Y Ratio = (Y - MinY) / (MaxY - MinY)
+                      // MinY = 0, MaxY = 100
+                      double relativeY = nearestSpot.y / 100.0;
+                      if (relativeY > 1.0) relativeY = 1.0;
+                      if (relativeY < 0.0) relativeY = 0.0;
+
+                      double dotTop = (1.0 - relativeY) * chartHeight;
+
+                      // Snap X to Nearest Spot
+                      double relativeSpotX =
+                          (nearestSpot.x - _minX) / (_maxX - _minX);
+                      double dotLeft = relativeSpotX * constraints.maxWidth;
+
+                      // Hide if out of bounds
+                      if (dotLeft < 0 || dotLeft > constraints.maxWidth) {
+                        return const SizedBox();
+                      }
+
+                      int totalMinutes = nearestSpot.x.toInt();
+                      int h = totalMinutes ~/ 60;
+                      int m = totalMinutes % 60;
+                      String timeStr =
+                          "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+
+                      return Stack(
+                        children: [
+                          Positioned(
+                            left: dotLeft - 6,
+                            top: dotTop - 6,
+                            child: Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.purple, width: 3),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                        blurRadius: 4, color: Colors.black26)
+                                  ]),
+                            ),
+                          ),
+                          Positioned(
+                            left: dotLeft - 32,
+                            top: 10,
+                            child: IgnorePointer(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  "$timeStr\n${nearestSpot.y.toInt()}",
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                       color: Colors.white, fontSize: 12),

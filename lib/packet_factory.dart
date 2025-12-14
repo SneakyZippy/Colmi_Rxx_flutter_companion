@@ -72,11 +72,13 @@ class PacketFactory {
     );
   }
 
-  static Uint8List enableHeartRate() {
-    // 0x16 0x02 0x01 - Enable Periodic Monitoring
+  static Uint8List enableHeartRate({int interval = 5}) {
+    // 0x16 0x02 0x01 <Interval> - Enable Periodic Monitoring
+    // Gadgetbridge sends interval as byte 3.
+    // Interval 5 mins = 0x05.
     return createPacket(
       command: 0x16,
-      data: [0x02, 0x01],
+      data: [0x02, 0x01, interval],
     );
   }
 
@@ -170,11 +172,25 @@ class PacketFactory {
     // Packet[1-4] = Timestamp (Little Endian)
     // Packet[5-15] = 0
 
-    int timestamp = date.millisecondsSinceEpoch ~/ 1000;
+    // Fix: Use UTC components to ignore local timezone offset.
+    // The ring likely treats 'Set Time' (Local) as its internal reference.
+    // If we request 'Local Midnight' converted to 'True UTC Timestamp', it shifts by TZ offset.
+    // We want the timestamp of 'Midnight 13th' to be the same raw number as if it were UTC.
+    // Example: Dec 14 00:00 Local (UTC+1) -> Dec 13 23:00 UTC. Timestamp is for Dec 13.
+    // By using DateTime.utc(2025, 12, 14), we get Dec 14 00:00 UTC. Timestamp is for Dec 14.
+    final utcDate = DateTime.utc(date.year, date.month, date.day);
+    int timestamp = utcDate.millisecondsSinceEpoch ~/ 1000;
+
+    // Fix 2: Packet Length.
+    // Gadgetbridge sends exactly 5 bytes (Cmd 0x15 + 4 bytes Timestamp).
+    // Previous code sent 14 bytes of payload (Cmd + 4 bytes TS + 10 bytes Zeros).
+    // The ring might reject the extra length or interpret zeros as data.
+    // We send only the 4 bytes of timestamp.
+
     ByteData byteData = ByteData(4);
     byteData.setUint32(0, timestamp, Endian.little);
 
-    List<int> data = List.filled(14, 0);
+    List<int> data = List.filled(4, 0);
     for (int i = 0; i < 4; i++) {
       data[i] = byteData.getUint8(i);
     }
@@ -328,8 +344,8 @@ class PacketFactory {
 
   // SpO2 History Sync (Alternative 0xBC)
   static const int cmdSyncSpo2HistoryNew = 0xBC;
-  // 0x2A was legacy/guessed. 0x2C matches the Notification (73 2C) and Config Command (2C).
-  static const int subCmdSyncSpo2 = 0x2C;
+  // 0x2A matches Gadgetbridge BIG_DATA_TYPE_SPO2
+  static const int subCmdSyncSpo2 = 0x2A;
 
   static Uint8List getSpo2LogPacketNew() {
     // Gadgetbridge: BC <Type> 01 00 FF 00 FF
