@@ -4,6 +4,8 @@
 
 - LOG_FINDINGS_SUMMARY are the informations we gathered out of btsniffing, there are .log and .txt files that work together to show the information aswell as the timestamp.
 
+- use the analyze_btsniff.py to analyze the btsniff files.
+
 - gadgetbridgeDiff.txt are the most important file for us, it shows the differences between the original gadgetbridge and the one we are using.
 
 

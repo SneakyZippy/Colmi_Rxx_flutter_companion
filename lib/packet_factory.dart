@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'ble_constants.dart';
 
 class PacketFactory {
   // Command Constants
@@ -240,7 +241,7 @@ class PacketFactory {
 
   static Uint8List createConfigInit() {
     // 0x39 05 ...
-    return createPacket(command: cmdConfig, data: [0x05]);
+    return createPacket(command: BleConstants.cmdLegacyConfig, data: [0x05]);
   }
 
   // Gadgetbridge Commands
@@ -293,7 +294,7 @@ class PacketFactory {
   // Legacy User Profile (0x39)
   // Found in logs: 39 04 ...
   static Uint8List createLegacyUserProfilePacket() {
-    return createPacket(command: cmdConfig, data: [
+    return createPacket(command: BleConstants.cmdLegacyConfig, data: [
       0x04, // Write? (Log showed 39 04)
       0x00, // 24h
       0x00, // Metric
@@ -352,6 +353,15 @@ class PacketFactory {
     return createPacket(
         command: cmdSyncSpo2HistoryNew,
         data: [subCmdSyncSpo2, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
+  }
+
+  // HRV History Sync (0x39) - Experimental
+  static const int cmdSyncHrv = 0x39;
+
+  static Uint8List getHrvLogPacket({int packetIndex = 0}) {
+    // Assuming structure matches Stress (0x37)
+    // 0x39 [PacketIndex]
+    return createPacket(command: cmdSyncHrv, data: [packetIndex]);
   }
 
   // Stress History Sync (0x37)
