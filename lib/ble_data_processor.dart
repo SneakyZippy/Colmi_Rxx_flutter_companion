@@ -1,0 +1,494 @@
+import 'ble_constants.dart';
+
+/// Callback interface for parsed data events
+abstract class BleDataCallbacks {
+  void onProtocolLog(String message);
+  void onRawLog(String message);
+
+  void onHeartRate(int bpm);
+  void onSpo2(int percent);
+  void onStress(int level);
+  void onHrv(int hrv);
+  void onBattery(int level);
+
+  void onHeartRateHistoryPoint(DateTime timestamp, int bpm);
+  void onSpo2HistoryPoint(DateTime timestamp, int percent);
+  void onStressHistoryPoint(DateTime timestamp, int level);
+  void onHrvHistoryPoint(DateTime timestamp, int val);
+  void onStepsHistoryPoint(DateTime timestamp, int steps, int quarterIndex);
+
+  void onRawAccel(List<int> data);
+  void onRawPPG(List<int> data);
+
+  void onAutoConfigRead(String type, bool enabled); // Type: HR, SpO2, etc.
+
+  void onNotification(int type);
+}
+
+class BleDataProcessor {
+  final BleDataCallbacks callbacks;
+
+  BleDataProcessor(this.callbacks);
+
+  // Big Data State
+  List<int> _bigDataBuffer = [];
+  int _bigDataExpectedLen = 0;
+  bool _isReceivingBigData = false;
+
+  // History Parsing State
+  int _hrLogInterval = 5;
+  int _hrLogBaseTime = 0;
+  int _hrLogCount = 0;
+
+  int _spo2LogInterval = 5;
+  int _spo2LogBaseTime = 0;
+  int _spo2LogCount = 0;
+
+  bool spo2DataReceived = false; // Track if we got any 0xBC data
+
+  Future<void> processData(List<int> data) async {
+    if (data.isEmpty) return;
+
+    // --- BIG DATA REASSEMBLY ---
+    if (_isReceivingBigData) {
+      _bigDataBuffer.addAll(data);
+      // callbacks.onProtocolLog("Buffering Big Data... ${_bigDataBuffer.length}/$_bigDataExpectedLen");
+
+      if (_bigDataBuffer.length >= _bigDataExpectedLen) {
+        List<int> fullPacket = List.from(_bigDataBuffer);
+        _isReceivingBigData = false;
+        _bigDataBuffer.clear();
+        _bigDataExpectedLen = 0;
+        await processData(fullPacket); // Recursive process
+      }
+      return;
+    }
+
+    if (data[0] == BleConstants.cmdBigData && data.length >= 4) {
+      int lenL = data[2];
+      int lenH = data[3];
+      int payloadLen = lenL | (lenH << 8);
+      int totalExpected = payloadLen + 6;
+
+      if (data.length < totalExpected) {
+        // Start buffering
+        _isReceivingBigData = true;
+        _bigDataExpectedLen = totalExpected;
+        _bigDataBuffer = List.from(data);
+        return;
+      }
+      // Else we have full packet, continue below
+    }
+
+    // --- PARSING ---
+    String hexData =
+        data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    callbacks.onRawLog("RX: $hexData");
+
+    int cmd = data[0];
+    // int dataOffset = 1; // Unused
+
+    // Handling 0xA1 specially (sometimes 3 byte header?)
+    if (cmd == BleConstants.cmdRawData && data.length > 2) {
+      // Logically handled same as others but payload structure differs
+      _handleRawData(data);
+      return;
+    }
+
+    switch (cmd) {
+      case BleConstants.cmdRealTimeMeasure: // 0x69
+        _handleRealTimeMeasure(data);
+        break;
+
+      case BleConstants.cmdNotify: // 0x73
+        _handleNotification(data);
+        break;
+
+      case BleConstants.cmdGetHeartRateLog: // 0x15
+        _handleHeartRateLog(data);
+        break;
+
+      case BleConstants.cmdGetSpo2Log: // 0x16 - OR HR Auto Config
+        _handleSpo2OrConfig(data);
+        break;
+
+      case BleConstants.cmdGetStepsLog: // 0x43
+        _handleStepsLog(data);
+        break;
+
+      case BleConstants.cmdBigData: // 0xBC
+        _handleBigData(data);
+        break;
+
+      case BleConstants.cmdStressSync: // 0x37
+        _handleStressHistory(data);
+        break;
+
+      case BleConstants.cmdStressConfig: // 0x36
+        _handleStressConfigOrData(data);
+        break;
+
+      case BleConstants.cmdGetBattery: // 0x03
+        if (data.length > 1) callbacks.onBattery(data[1]);
+        break;
+
+      case BleConstants.cmdSpo2AutoConfig: // 0x2C
+        if (data.length > 2 && data[1] == 0x01) {
+          callbacks.onAutoConfigRead("SpO2", data[2] != 0);
+        }
+        break;
+
+      case BleConstants.cmdHrvConfig: // 0x38
+        if (data.length > 2 && data[1] == 0x01) {
+          callbacks.onAutoConfigRead("HRV", data[2] != 0);
+        }
+        break;
+
+      case BleConstants.cmdHrvSync: // 0x39
+        _handleHrvHistory(data);
+        break;
+
+      // ... Add others as needed
+    }
+  }
+
+  void _handleRawData(List<int> data) {
+    // 0xA1 <Type> ...
+    int subType = data[1];
+    if (subType == 0x03) {
+      callbacks.onRawAccel(data);
+    } else if (subType == 0x01 || subType == 0x02) {
+      callbacks.onRawPPG(data);
+    }
+  }
+
+  void _handleRealTimeMeasure(List<int> data) {
+    // 69 <Type> <Status/00> <Val>
+    if (data.length < 3) return;
+    int type = data[1];
+
+    // Safety check for index
+    int val = 0;
+    if (data.length > 3) {
+      // Typically index 3 is value (69 01 00 48)
+      val = data[3];
+      // Fallback logic from original code
+      if (val == 0 && data.length > 2) val = data[2];
+    } else if (data.length > 2) {
+      val = data[2];
+    }
+
+    if (val > 0) {
+      if (type == BleConstants.typeHeartRate)
+        callbacks.onHeartRate(val);
+      else if (type == BleConstants.typeSpo2)
+        callbacks.onSpo2(val);
+      else if (type == BleConstants.typeStress)
+        callbacks.onStress(val);
+      else if (type == BleConstants.typeHrv) callbacks.onHrv(val);
+    }
+  }
+
+  void _handleNotification(List<int> data) {
+    // 73 <Type>
+    if (data.length < 2) return;
+    int type = data[1];
+
+    callbacks.onNotification(type);
+
+    // Legacy support for Stress values in notification?
+    // 73 00 [Stress?]
+    if (type == 0 && data.length > 2) {
+      int val = data[2];
+      if (val > 0) callbacks.onStress(val);
+    }
+  }
+
+  void _handleHeartRateLog(List<int> data) {
+    // 0x15 ...
+    if (data.length < 2) return;
+    int subType = data[1];
+    if (subType == 0xFF) return; // End
+
+    if (subType == 0) {
+      // Start: [15, 00, 18?, 05(Interval), ...]
+      if (data.length > 3) _hrLogInterval = data[3];
+      if (_hrLogInterval <= 0) _hrLogInterval = 5;
+    } else if (subType == 1) {
+      // Timestamp
+      if (data.length >= 6) {
+        int t0 = data[2];
+        int t1 = data[3];
+        int t2 = data[4];
+        int t3 = data[5];
+        _hrLogBaseTime = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24);
+        _hrLogCount = 0;
+
+        // Parse first batch in this packet
+        _parseHrParams(data, 6, 9);
+      }
+    } else {
+      // Data
+      // Starts at index 2
+      _parseHrParams(data, 2, 13);
+    }
+  }
+
+  void _parseHrParams(List<int> data, int startIndex, int limit) {
+    for (int i = startIndex;
+        i < data.length - 1 && i < startIndex + limit;
+        i++) {
+      int val = data[i];
+      if (val != 0 && val != 255) {
+        _emitHrPoint(val);
+      }
+      _hrLogCount++;
+    }
+  }
+
+  void _emitHrPoint(int val) {
+    if (_hrLogBaseTime == 0) return;
+    int sec = _hrLogBaseTime + (_hrLogCount * _hrLogInterval * 60);
+    DateTime dt = DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+    callbacks.onHeartRateHistoryPoint(dt, val);
+  }
+
+  void _handleSpo2OrConfig(List<int> data) {
+    // 0x16 ...
+    if (data.length < 3) return;
+    int b1 = data[1];
+    int b2 = data[2];
+
+    // SpO2 Log: Key 0x03
+    if (b2 == 0x03) {
+      // Header: [16, Offset, 03, Start, Count?]
+      // Just reset state
+      // _spo2LogInterval = 5;
+      return;
+    }
+
+    // Config Read: 16 01 [Times...] (Year 2000 catch)
+    if (b1 == 0x01) {
+      // Check timestamp to differentiate from Data
+      if (data.length > 5) {
+        int t0 = data[2];
+        // ...
+        int timestamp = t0 | (data[3] << 8) | (data[4] << 16) | (data[5] << 24);
+        if (timestamp < 1000000000) {
+          // Config Read (Timestamp small)
+          bool enabled = (data[2] != 0);
+          callbacks.onAutoConfigRead("HR", enabled);
+          return;
+        } else {
+          // SpO2 Data Timestamp
+          _spo2LogBaseTime = timestamp;
+          _spo2LogCount = 0;
+          // Parse immediate ?
+          _parseSpo2Params(data, 6, 9);
+          return;
+        }
+      }
+    }
+
+    // Legacy/Data stream?
+    // If we assume it falls through... logic in original was fuzzy.
+  }
+
+  void _parseSpo2Params(List<int> data, int startIndex, int limit) {
+    for (int i = startIndex;
+        i < data.length - 1 && i < startIndex + limit;
+        i++) {
+      int val = data[i];
+      if (val > 0 && val != 255) {
+        _emitSpo2Point(val);
+      }
+      _spo2LogCount++;
+    }
+  }
+
+  void _emitSpo2Point(int val) {
+    if (_spo2LogBaseTime == 0) return;
+    int sec = _spo2LogBaseTime + (_spo2LogCount * _spo2LogInterval * 60);
+    DateTime dt = DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+    callbacks.onSpo2HistoryPoint(dt, val);
+  }
+
+  void _handleBigData(List<int> data) {
+    // BC <Type> ...
+    if (data.length < 2) return;
+    int sub = data[1];
+
+    if (sub == BleConstants.subSpo2BigData) {
+      // 0x2A
+      spo2DataReceived = true;
+      // Index 6 start
+      int index = 6;
+      while (index < data.length) {
+        if (index >= data.length) break;
+        int daysAgo = data[index];
+        if (daysAgo == 0xFF) break;
+        index++;
+
+        DateTime syncingDay = DateTime.now().subtract(Duration(days: daysAgo));
+        // Iterate 24h (48 bytes)
+        for (int h = 0; h < 24; h++) {
+          if (index + 1 >= data.length) break;
+          int minV = data[index++];
+          int maxV = data[index++];
+          if (minV > 0 && maxV > 0) {
+            int avg = (minV + maxV) ~/ 2;
+            DateTime dt = DateTime(
+                syncingDay.year, syncingDay.month, syncingDay.day, h, 0);
+            callbacks.onSpo2HistoryPoint(dt, avg);
+          }
+        }
+      }
+    } else if (sub == 0xEE) {
+      // End
+      // Signal to Service that 0xBC ended?
+      // The Service tracked "If !dataReceived -> Trigger Old".
+      // We can callback:
+      callbacks.onProtocolLog(
+          "Big Data 0xBC Complete. Spo2Received: $spo2DataReceived");
+      // Maybe a specific callback for "SyncComplete"?
+    }
+  }
+
+  void _handleStepsLog(List<int> data) {
+    // 0x43 ...
+    if (data.length < 13) return;
+    if (data[1] == 0xF0) {
+      // Start
+      return;
+    }
+
+    // Parse Date: [1]=Yr, [2]=Mo, [3]=Day
+    int y = int.tryParse(data[1].toRadixString(16)) ??
+        0; // Use BCD logic if hex? Original used toRadixString(16) which implies BCD-ish?
+    // Original: int.tryParse(data[offset].toRadixString(16))
+    // If data is 0x25, string is "25", int is 25. Correct for BCD.
+    int year = 2000 + y;
+    int month = int.tryParse(data[2].toRadixString(16)) ?? 1;
+    int day = int.tryParse(data[3].toRadixString(16)) ?? 1;
+    int qIdx = data[4];
+
+    // Steps at index 9 (Offset+8) => data[9], data[10]
+    if (data.length > 10) {
+      int steps = data[9] | (data[10] << 8);
+      if (steps > 0) {
+        // Calculate time
+        int mins = qIdx * 15;
+        DateTime dt = DateTime(year, month, day).add(Duration(minutes: mins));
+        callbacks.onStepsHistoryPoint(dt, steps, qIdx);
+      }
+    }
+  }
+
+  void _handleStressHistory(List<int> data) {
+    // 0x37 [PacketIdx] ...
+    if (data.length < 2) return;
+    int pIdx = data[1];
+    if (pIdx == 0xFF) return; // End
+    if (pIdx == 0) return; // Header
+
+    int startIdx = (pIdx == 1) ? 3 : 2;
+    // Reconstruct simplified time
+    // Since stress packet doesn't have timestamp, we assume "Today"?
+    // Or based on request?
+    // Original code just logged it.
+    // We will calculate generic "MinuteOfDay" and let Service attach Date.
+    // But wait, callbacks takes DateTime.
+    // We'll use a dummy date or "Today".
+    DateTime today = DateTime.now();
+    // We'll use start of today, Service can re-map if needed?
+    // Actually, Stress History logic in original was very barebones.
+
+    int minsOffset = 0;
+    if (pIdx > 1) {
+      minsOffset = 12 * 30 + (pIdx - 2) * 13 * 30;
+    }
+
+    for (int i = startIdx; i < data.length - 1; i++) {
+      int val = data[i];
+      if (val > 0) {
+        int minOfDay = minsOffset + (i - startIdx) * 30;
+        int h = minOfDay ~/ 60;
+        int m = minOfDay % 60;
+        DateTime dt = DateTime(today.year, today.month, today.day, h, m);
+        callbacks.onStressHistoryPoint(dt, val);
+      }
+    }
+  }
+
+  void _handleHrvHistory(List<int> data) {
+    // 0x39 [PacketIdx] ...
+    // Modeled after Stress (0x37)
+    if (data.length < 2) return;
+    int pIdx = data[1];
+
+    // Check if it's Legacy Config (0x39 04 / 0x39 05)
+    // If it's 04 or 05, and length is small?
+    // Usually Config command response mirrors request.
+    // If we requested Sync (0x39 00 ...), we expect 0x39 00 response.
+    // If we requested Config (0x39 04 ...), we expect 0x39 04 response.
+    // RISK: Overlap if PacketIndex is 4 or 5.
+    // Mitigation: Check length? Or context?
+    // For now, assume if it looks like data (length > 2) and we are syncing, it's data.
+
+    if (pIdx == 0xFF) return; // End
+    // If pIdx is a valid config opcode? 0x01 (Read), 0x02 (Write), 0x03 (Del)?
+    // Command 0x39 legacy opcodes are 0x05 (Init), 0x04 (Profile).
+    // Let's assume if we are syncing, we want to parse it.
+
+    int startIdx = (pIdx == 0) ? 2 : (pIdx == 1 ? 3 : 2);
+    // Actually Stress logic: 0->Header? No, Stress 0->Header is ignored in my code?
+    // "if (pIdx == 0) return;" // Header
+    // If HRV follows suit:
+    if (pIdx == 0) return;
+
+    // Adjust start index logic if needed
+    if (pIdx == 1)
+      startIdx = 3;
+    else
+      startIdx = 2; // Copying stress logic
+
+    DateTime today = DateTime.now();
+
+    int minsOffset = 0;
+    if (pIdx > 1) {
+      minsOffset = 12 * 30 + (pIdx - 2) * 13 * 30;
+    }
+
+    for (int i = startIdx; i < data.length - 1; i++) {
+      int val = data[i];
+      if (val > 0) {
+        int minOfDay = minsOffset + (i - startIdx) * 30;
+        int h = minOfDay ~/ 60;
+        int m = minOfDay % 60;
+        DateTime dt = DateTime(today.year, today.month, today.day, h, m);
+        callbacks.onHrv(
+            val); // Reuse onHrv for now as we treat it as "History Point" -> onHrv adds to history
+        // Wait, onHrv adds to history using "Now" time if I use the old logic?
+        // "onHrv(int val)" in BleService uses DateTime.now().
+        // I should add "onHrvHistoryPoint" to callbacks interface!
+        // But for now, let's reuse onHrv? No, the timestamp will be wrong (Now vs Today+Offset).
+        // I SHOULD add onHrvHistoryPoint.
+        // But I can't edit interface easily without editing BleService too.
+        // Let's check BleService...
+        // BleDataCallbacks has `onHrv(int hrv)`
+        // It does NOT have `onHrvHistoryPoint`.
+        // I'll add `onHrvHistoryPoint` to the interface in `BleDataProcessor` (it's in the same file).
+        // Then I have to update `BleService` to implement it.
+        callbacks.onHrvHistoryPoint(dt, val);
+      }
+    }
+  }
+
+  void _handleStressConfigOrData(List<int> data) {
+    // 36 01 [Enabled]
+    if (data.length > 2 && data[1] == 0x01) {
+      bool enabled = (data[2] != 0);
+      callbacks.onAutoConfigRead("Stress", enabled);
+    }
+  }
+}

@@ -112,7 +112,7 @@ class DashboardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ringularity V0.0.2 Dashboard')),
+      appBar: AppBar(title: const Text('Ringularity V0.0.3 Dashboard')),
       body: Consumer<BleService>(
         builder: (context, ble, child) {
           return SingleChildScrollView(
@@ -219,7 +219,7 @@ class DashboardView extends StatelessWidget {
                         unit: "BPM",
                         icon: Icons.favorite,
                         color: Colors.red,
-                        time: "Latest", // TODO: Timestamp
+                        time: ble.heartRateTime,
                       ),
                       _MetricCard(
                         title: "SpO2",
@@ -227,7 +227,7 @@ class DashboardView extends StatelessWidget {
                         unit: "%",
                         icon: Icons.water_drop,
                         color: Colors.blue,
-                        time: "Latest",
+                        time: ble.spo2Time,
                       ),
                       _MetricCard(
                         title: "Stress",
@@ -235,7 +235,7 @@ class DashboardView extends StatelessWidget {
                         unit: "Score", // 0-100
                         icon: Icons.psychology,
                         color: Colors.purple,
-                        time: "Latest",
+                        time: ble.stressTime,
                       ),
                       _MetricCard(
                         title: "HRV",
@@ -243,7 +243,7 @@ class DashboardView extends StatelessWidget {
                         unit: "ms",
                         icon: Icons.monitor_heart,
                         color: Colors.deepPurple,
-                        time: "Latest",
+                        time: ble.hrvTime,
                       ),
                       _MetricCard(
                         title: "Steps",
@@ -251,7 +251,7 @@ class DashboardView extends StatelessWidget {
                         unit: "steps",
                         icon: Icons.directions_walk,
                         color: Colors.orange,
-                        time: "Today",
+                        time: ble.stepsTime,
                       ),
                     ],
                   ),
