@@ -112,7 +112,7 @@ class DashboardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ringularity V0.0.3 Dashboard')),
+      appBar: AppBar(title: const Text('Ringularity V0.0.4 Dashboard')),
       body: Consumer<BleService>(
         builder: (context, ble, child) {
           return SingleChildScrollView(
