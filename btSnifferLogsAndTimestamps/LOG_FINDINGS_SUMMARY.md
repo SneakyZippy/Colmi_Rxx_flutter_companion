@@ -1,10 +1,47 @@
 # 🕵️‍♂️ Bluetooth Log Analysis Findings
-**Generated:** 2025-12-12
-**Source Folder:** `btSnifferLogsAndTimestamps/`
-
-This document summarizes the protocols and commands discovered by analyzing the provided `btSniffer` logs.
+**Generated:** 2025-12-15
+**Source Logs:** `btSnifferSyncProcess.txt`, `btSnifferSyncProcessAsText.txt`
 
 ---
+
+## 🔍 Synchronization Process Analysis (Sync Consistency)
+
+### Objective
+Determine if the "automatical refresh" and subsequent "next sync" events recorded in the logs follow the same synchronization protocol and sequence.
+
+### Methodology
+1.  **Timeline Correlation:**
+    *   `btSnifferSyncProcess.txt` identified "automatical refresh" at `10:16:28` and "next sync" at `10:16:36` (8-second interval).
+    *   `btSnifferSyncProcessAsText.txt` (detailed log) showed distinct activity bursts at relative timestamps `119.7s` and `129.2s` (Difference: ~9.5s, correlating with the sync interval).
+
+2.  **Sequence Comparison:**
+    *   **Block 1 (Auto Refresh):** Starts at Frame 712 (Timestamp ~119.7s)
+    *   **Block 2 (Next Sync):** Starts at Frame 876 (Timestamp ~129.3s)
+
+### Findings
+**YES, the synchronization processes are identical.**
+
+Both synchronization events appear to follow the exact same request/response pattern up to the analyzed depth.
+
+#### Detailed Sequence Match:
+
+| Step | Direction | Type | Handle | Length | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | **TX** | Write Command | `0x0016` | **18 bytes** | Initial trigger |
+| 2 | **RX** | Notification | `0x0018` | **19 bytes** | Device acknowledgment? |
+| 3 | **TX** | Write Request | `0x0010` | **28 bytes** | Data request |
+| 4 | **RX** | Notification | `0x0012` | **28 bytes** | Initial Data packet |
+| 5 | **TX** | Write Request | `0x0010` | **28 bytes** | Confirmed Data request |
+| 6 | **RX** | Notification | `0x0012` | **28 bytes** | **Burst of 5 packets** (Data transfer) |
+| 7 | **TX** | Write Command | `0x0016` | **20 bytes** | Secondary trigger/Close? |
+| 8 | **TX** | Write Request | `0x0010` | **28 bytes** | Final Data Request |
+
+#### Conclusion
+The "automatical refresh" and "next sync" events trigger the **exact same sequence of GATT operations**. The device appears to be syncing in a consistent manner regardless of whether it's an auto-refresh or a manually triggered/subsequent sync.
+
+---
+
+## 📂 Previous Findings (Context)
 
 ## 1. Heart Rate Monitoring (`btSnifferHRTab.txt`)
 *   **Auto/Periodic Mode:**
@@ -28,17 +65,18 @@ The log revealed a previously unknown command for Heart Rate Variability.
     *   **Start:** `69 0A 00` (Type `0xA` = HRV/Stress)
     *   **Stop:** `6A 0A 00`
 
-## 2. SpO2 Monitoring (`btSnifferSPO2Tab.txt/.log`)
-Critical correction found here. The ring does **not** use `0x03` for manual SpO2.
-*   **Auto Mode:**
+## 2. SpO2 Monitoring (`btSnifferSPO2Tab.txt/.log` + `SyncProcessAsText3`)
+*   **Auto/History Sync (CONFIRMED 1:1):**
+    *   **Protocol:** `0xBC` (New Command Set)
+    *   **SubCommand:** `0x2A` (SpO2 Data)
+    *   **Log Evidence:** `Value: bc2a0100ff00ff` found in `AsText3.txt`.
+    *   **Code Match:** `BleService.syncSpo2History` uses `PacketFactory.getSpo2LogPacketNew()` -> `BC 2A`.
+*   **Auto Mode Config:**
     *   **Command:** `0x2C`
-    *   **Enable:** `2C 02 01`
-    *   **Disable:** `2C 02 00`
-*   **Manual/Real-Time Mode (CORRECTION):**
-    *   **Start:** `69 08 00` (Triggers **Green Light** / HR Variant - Verified by User 2025-12-12)
-    *   **Start Candidate:** `69 02 00` (Testing for Red Light/SpO2)
-    *   **Stop:** `6A [Type] 00`
-    *   *Note:* Previous assumption of `0x08` as SpO2 was incorrect (it is Green). Testing `0x02`.
+    *   **Enable:** `2C 02 01` / Disable: `2C 02 00`
+*   **Manual/Real-Time Mode (POTENTIAL MISMATCH):**
+    *   **Code:** uses `0x69 03`
+    *   **Log Hint:** `0x69 08` (Green Light) observed in other logs. *Not present in Sync Log.*
 
 ## 3. Activity Tracking (`btSnifferActivityTrackingTab.txt`)
 New command family for controlling Sports Modes (Walk/Run).

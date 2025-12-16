@@ -15,6 +15,8 @@ abstract class BleDataCallbacks {
   void onSpo2HistoryPoint(DateTime timestamp, int percent);
   void onStressHistoryPoint(DateTime timestamp, int level);
   void onHrvHistoryPoint(DateTime timestamp, int val);
+  void onSleepHistoryPoint(DateTime timestamp, int sleepStage,
+      {int durationMinutes = 0});
   void onStepsHistoryPoint(DateTime timestamp, int steps, int quarterIndex);
 
   void onRawAccel(List<int> data);
@@ -148,6 +150,10 @@ class BleDataProcessor {
         _handleHrvHistory(data);
         break;
 
+      case BleConstants.cmdGetSleepLog: // 0x7A
+        _handleSleepLog(data);
+        break;
+
       // ... Add others as needed
     }
   }
@@ -249,7 +255,14 @@ class BleDataProcessor {
   void _emitHrPoint(int val) {
     if (_hrLogBaseTime == 0) return;
     int sec = _hrLogBaseTime + (_hrLogCount * _hrLogInterval * 60);
-    DateTime dt = DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+    // The device sends the timestamp as if it were UTC, but it represents Local Time components.
+    // Example: 00:00 Device Time -> Sent as 00:00 UTC Timestamp.
+    // If we just use fromMillisecondsSinceEpoch, it converts 00:00 UTC -> 01:00 Local (if +1).
+    // So we first parse as UTC to get the "face value" components, then create a Local DateTime from them.
+    DateTime utcDt =
+        DateTime.fromMillisecondsSinceEpoch(sec * 1000, isUtc: true);
+    DateTime dt = DateTime(utcDt.year, utcDt.month, utcDt.day, utcDt.hour,
+        utcDt.minute, utcDt.second);
     callbacks.onHeartRateHistoryPoint(dt, val);
   }
 
@@ -309,7 +322,11 @@ class BleDataProcessor {
   void _emitSpo2Point(int val) {
     if (_spo2LogBaseTime == 0) return;
     int sec = _spo2LogBaseTime + (_spo2LogCount * _spo2LogInterval * 60);
-    DateTime dt = DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+    // Same fix for SpO2
+    DateTime utcDt =
+        DateTime.fromMillisecondsSinceEpoch(sec * 1000, isUtc: true);
+    DateTime dt = DateTime(utcDt.year, utcDt.month, utcDt.day, utcDt.hour,
+        utcDt.minute, utcDt.second);
     callbacks.onSpo2HistoryPoint(dt, val);
   }
 
@@ -326,6 +343,9 @@ class BleDataProcessor {
       while (index < data.length) {
         if (index >= data.length) break;
         int daysAgo = data[index];
+        callbacks.onProtocolLog(
+            "Parsing SpO2 Chunk: DaysAgo=$daysAgo (Index=$index)");
+
         if (daysAgo == 0xFF) break;
         index++;
 
@@ -466,19 +486,6 @@ class BleDataProcessor {
         int h = minOfDay ~/ 60;
         int m = minOfDay % 60;
         DateTime dt = DateTime(today.year, today.month, today.day, h, m);
-        callbacks.onHrv(
-            val); // Reuse onHrv for now as we treat it as "History Point" -> onHrv adds to history
-        // Wait, onHrv adds to history using "Now" time if I use the old logic?
-        // "onHrv(int val)" in BleService uses DateTime.now().
-        // I should add "onHrvHistoryPoint" to callbacks interface!
-        // But for now, let's reuse onHrv? No, the timestamp will be wrong (Now vs Today+Offset).
-        // I SHOULD add onHrvHistoryPoint.
-        // But I can't edit interface easily without editing BleService too.
-        // Let's check BleService...
-        // BleDataCallbacks has `onHrv(int hrv)`
-        // It does NOT have `onHrvHistoryPoint`.
-        // I'll add `onHrvHistoryPoint` to the interface in `BleDataProcessor` (it's in the same file).
-        // Then I have to update `BleService` to implement it.
         callbacks.onHrvHistoryPoint(dt, val);
       }
     }
@@ -489,6 +496,87 @@ class BleDataProcessor {
     if (data.length > 2 && data[1] == 0x01) {
       bool enabled = (data[2] != 0);
       callbacks.onAutoConfigRead("Stress", enabled);
+    }
+  }
+
+  void _handleSleepLog(List<int> data) {
+    // Gadgetbridge Protocol (confirmed):
+    // Header: 0x7A [PIdx] [LenLow] [LenHigh] ...
+    // Payload start at index 7? No, based on PacketHandler.java:
+    // int daysInPacket = value[6];
+    // int index = 7;
+    // ...
+    // Loop Days:
+    //   daysAgo = value[index];
+    //   dayBytes = value[index+1];
+    //   start = u16(index+2);
+    //   end = u16(index+4);
+    //   index += 6;
+    //   Loop Stages until dayBytes:
+    //     type = value[index];
+    //     mins = value[index+1];
+    //     index += 2;
+
+    String hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+    callbacks.onProtocolLog("Sleep Packet (0x7A): $hex");
+
+    if (data.length < 7) return;
+
+    // Check header for packet length?
+    // int packetLen = (data[2] | (data[3] << 8));
+    // if (data.length < packetLen) ... // Packet might be fragmented or full?
+
+    int daysInPacket = data[6];
+    int index = 7;
+
+    for (int i = 0; i < daysInPacket; i++) {
+      if (index + 6 >= data.length) break;
+
+      // int daysAgo = data[index]; // ignored for now, assume chronological or mapped
+      int dayBytes = data[index + 1];
+
+      // Time
+      int sleepStartMins = data[index + 2] | (data[index + 3] << 8);
+      int sleepEndMins = data[index + 4] | (data[index + 5] << 8);
+
+      DateTime now = DateTime.now();
+      // Construct approximate start time (Logic from GB: if start > end, it crossed midnight)
+      // Since we don't have exact 'daysAgo' reliable context without a full history sync,
+      // let's try to map it to 'request date' or just use the time for the graph relative to 24h.
+
+      // For simplicity, let's assume the data is for "last night" if it crosses midnight, or "today" if not.
+      DateTime sessionStart = DateTime(now.year, now.month, now.day, 0, 0)
+          .add(Duration(minutes: sleepStartMins));
+
+      if (sleepStartMins > sleepEndMins) {
+        // Started yesterday
+        sessionStart = sessionStart.subtract(const Duration(days: 1));
+      }
+
+      index += 6;
+
+      // Stages
+      // "dayBytes" implies the length of the DATA chunk for this day?
+      // GB: "for (int j = 4; j < dayBytes; j += 2)"
+      // This implies 'dayBytes' includes the 4 bytes of start/end time?
+      // 4 (start/end) + (N * 2 stages).
+
+      int bytesRead = 4;
+      while (bytesRead < dayBytes) {
+        if (index + 1 >= data.length) break;
+
+        int type = data[index];
+        int duration = data[index + 1];
+
+        // 0x02=Light, 0x03=Deep, 0x05=Awake
+        callbacks.onSleepHistoryPoint(sessionStart, type,
+            durationMinutes: duration);
+
+        sessionStart = sessionStart.add(Duration(minutes: duration));
+
+        index += 2;
+        bytesRead += 2;
+      }
     }
   }
 }

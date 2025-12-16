@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'ble_service.dart';
+import 'ble_constants.dart';
 
 class DataDebugScreen extends StatelessWidget {
   const DataDebugScreen({super.key});
@@ -9,7 +10,7 @@ class DataDebugScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Data Debugger"),
@@ -20,6 +21,9 @@ class DataDebugScreen extends StatelessWidget {
               Tab(text: "Steps Raw"),
               Tab(text: "HR Raw"),
               Tab(text: "SpO2 Raw"),
+              Tab(text: "Stress Raw"),
+              Tab(text: "HRV Raw"),
+              Tab(text: "Sleep Raw"),
             ],
           ),
         ),
@@ -31,6 +35,9 @@ class DataDebugScreen extends StatelessWidget {
                 _buildStepsList(ble),
                 _buildHrList(ble),
                 _buildSpo2List(ble),
+                _buildStressList(ble),
+                _buildHrvList(ble),
+                _buildSleepList(ble),
               ],
             );
           },
@@ -117,6 +124,103 @@ class DataDebugScreen extends StatelessWidget {
           trailing: Text("${point.y}%",
               style: const TextStyle(
                   color: Colors.blue, fontWeight: FontWeight.bold)),
+        );
+      },
+    );
+  }
+
+  Widget _buildStressList(BleService ble) {
+    if (ble.stressHistory.isEmpty) {
+      return const Center(child: Text("No Stress data"));
+    }
+    List<dynamic> points = List.from(ble.stressHistory);
+
+    return ListView.builder(
+      itemCount: points.length,
+      itemBuilder: (context, index) {
+        final point = points[index];
+        int totalMinutes = point.x.toInt();
+        int h = totalMinutes ~/ 60;
+        int m = totalMinutes % 60;
+        String timeStr =
+            "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+
+        return ListTile(
+          dense: true,
+          title: Text("Time: $timeStr (Min: ${point.x})"),
+          trailing: Text("${point.y}",
+              style: const TextStyle(
+                  color: Colors.purple, fontWeight: FontWeight.bold)),
+        );
+      },
+    );
+  }
+
+  Widget _buildHrvList(BleService ble) {
+    if (ble.hrvHistory.isEmpty) {
+      return const Center(child: Text("No HRV data"));
+    }
+    List<dynamic> points = List.from(ble.hrvHistory);
+
+    return ListView.builder(
+      itemCount: points.length,
+      itemBuilder: (context, index) {
+        final point = points[index];
+        int totalMinutes = point.x.toInt();
+        int h = totalMinutes ~/ 60;
+        int m = totalMinutes % 60;
+        String timeStr =
+            "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+
+        return ListTile(
+          dense: true,
+          title: Text("Time: $timeStr (Min: ${point.x})"),
+          trailing: Text("${point.y} ms",
+              style: const TextStyle(
+                  color: Colors.pink, fontWeight: FontWeight.bold)),
+        );
+      },
+    );
+  }
+
+  Widget _buildSleepList(BleService ble) {
+    if (ble.sleepHistory.isEmpty) {
+      return const Center(child: Text("No Sleep data"));
+    }
+    // ble.sleepHistory is List<SleepData>
+    var data = ble.sleepHistory;
+
+    return ListView.builder(
+      itemCount: data.length,
+      itemBuilder: (context, index) {
+        final item = data[index];
+        final dt = item.timestamp;
+        String timeStr =
+            "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+
+        String stageStr = "Unknown (${item.stage})";
+        Color color = Colors.grey;
+
+        if (item.stage == BleConstants.sleepAwake) {
+          stageStr = "Awake";
+          color = Colors.orange;
+        } else if (item.stage == BleConstants.sleepLight) {
+          stageStr = "Light";
+          color = Colors.blue;
+        } else if (item.stage == BleConstants.sleepDeep) {
+          stageStr = "Deep";
+          color = Colors.indigo;
+        }
+
+        return ListTile(
+          dense: true,
+          title: Text("$timeStr - $stageStr"),
+          subtitle: Text("Duration: ${item.durationMinutes} mins"),
+          trailing: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
         );
       },
     );

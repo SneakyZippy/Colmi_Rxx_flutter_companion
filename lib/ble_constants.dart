@@ -37,6 +37,7 @@ class BleConstants {
   static const int cmdLegacyConfig = 0x39; // Legacy config, same ID
   static const int cmdGetStepsLog = 0x43;
   static const int cmdBind = 0x48;
+  static const int cmdGetSleepLog = 0x7A;
 
   static const int cmdRealTimeMeasure = 0x69; // Start
   static const int cmdRealTimeStop = 0x6A; // Stop
@@ -60,4 +61,9 @@ class BleConstants {
   // Big Data Subtypes (0xBC)
   static const int subSpo2BigData = 0x2A;
   static const int subBigDataEnd = 0xEE;
+
+  // Sleep Types (Gadgetbridge Confirmed)
+  static const int sleepLight = 0x02;
+  static const int sleepDeep = 0x03;
+  static const int sleepAwake = 0x05;
 }

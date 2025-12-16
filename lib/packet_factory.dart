@@ -158,7 +158,8 @@ class PacketFactory {
   // New Commands
   static const int cmdGetBattery = 0x03;
   static const int cmdGetHeartRateLog = 0x15; // 21 decimal
-  static const int cmdGetSpo2Log = 0x16; // 22 decimal (Experimental)
+  static const int cmdGetSpo2Log = 0x16; // 22 decimal
+  static const int cmdGetSleepLog = 0x7A; // 122 decimal (Experimental)
 
   /// Creates packet to request battery level
   static Uint8List getBatteryPacket() {
@@ -350,6 +351,8 @@ class PacketFactory {
 
   static Uint8List getSpo2LogPacketNew() {
     // Gadgetbridge: BC <Type> 01 00 FF 00 FF
+    // We confirmed 7-byte raw failed (Silence), 16-byte worked (Response).
+    // The key 0x01 seems to be "Fetch All", not an offset.
     return createPacket(
         command: cmdSyncSpo2HistoryNew,
         data: [subCmdSyncSpo2, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
@@ -371,6 +374,12 @@ class PacketFactory {
     // Gadgetbridge sends 0x37 [PacketIndex]
     // 0x00 is the first packet.
     return createPacket(command: cmdSyncStress, data: [packetIndex]);
+  }
+
+  // Sleep History Sync (0x7A)
+  static Uint8List getSleepLogPacket({int packetIndex = 0}) {
+    // 0x7A [PacketIndex]
+    return createPacket(command: cmdGetSleepLog, data: [packetIndex]);
   }
 
   // Raw PPG Stream (Green Light High Frequency)

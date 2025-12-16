@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'packet_factory.dart';
 import 'ble_constants.dart';
 import 'ble_data_processor.dart';
+import 'features/model/sleep_data.dart';
 
 import 'package:flutter/widgets.dart'; // For WidgetsBindingObserver
 
@@ -65,12 +66,14 @@ class BleService extends ChangeNotifier
   final List<Point> _stressHistory = [];
   final List<Point> _hrvHistory = []; // Session-based history
   final List<Point> _stepsHistory = [];
+  final List<SleepData> _sleepHistory = [];
 
   List<Point> get hrHistory => List.unmodifiable(_hrHistory);
   List<Point> get spo2History => List.unmodifiable(_spo2History);
   List<Point> get stressHistory => List.unmodifiable(_stressHistory);
   List<Point> get hrvHistory => List.unmodifiable(_hrvHistory);
   List<Point> get stepsHistory => List.unmodifiable(_stepsHistory);
+  List<SleepData> get sleepHistory => List.unmodifiable(_sleepHistory);
 
   DateTime _selectedDate = DateTime.now();
   DateTime get selectedDate => _selectedDate;
@@ -536,6 +539,7 @@ class BleService extends ChangeNotifier
 
   @override
   void onRawLog(String message) {
+    debugPrint(message); // Enable console log for debugging
     _lastLog = message;
     // notifyListeners(); // Optional?
   }
@@ -740,6 +744,25 @@ class BleService extends ChangeNotifier
   }
 
   @override
+  void onSleepHistoryPoint(DateTime timestamp, int stage,
+      {int durationMinutes = 0}) {
+    bool isSameDay = timestamp.year == _selectedDate.year &&
+        timestamp.month == _selectedDate.month &&
+        timestamp.day == _selectedDate.day;
+
+    // TODO: Handle multi-day spanning if needed. For now, filter by selected date view.
+    // Or just store everything and filter in UI?
+    // Storing everything is safer.
+
+    // Remove existing for same time (dedupe)
+    _sleepHistory.removeWhere((s) => s.timestamp == timestamp);
+    _sleepHistory.add(SleepData(
+        timestamp: timestamp, stage: stage, durationMinutes: durationMinutes));
+    _sleepHistory.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    notifyListeners();
+  }
+
+  @override
   void onRawAccel(List<int> data) {
     _accelStreamController.add(data);
   }
@@ -796,6 +819,8 @@ class BleService extends ChangeNotifier
         await syncSpo2History();
         await Future.delayed(const Duration(milliseconds: 500));
         await syncStressHistory();
+        await Future.delayed(const Duration(milliseconds: 500));
+        await syncSleepHistory();
       });
     }
   }
@@ -1124,8 +1149,8 @@ class BleService extends ChangeNotifier
   Future<void> syncSpo2History() async {
     if (_writeChar == null) return;
     try {
-      debugPrint("Requesting SpO2 History (New Protocol 0xBC)...");
-
+      debugPrint("Syncing SpO2 History (Key 0x01)...");
+      // Single Request (Proven working in logs to trigger response)
       await _writeChar!.write(PacketFactory.getSpo2LogPacketNew());
     } catch (e) {
       debugPrint("Error syncing SpO2 history: $e");
@@ -1654,5 +1679,14 @@ class BleService extends ChangeNotifier
       await Future.delayed(const Duration(milliseconds: 300));
     }
     _log("✅ Settings Sync Complete");
+  }
+
+  Future<void> syncSleepHistory() async {
+    if (_writeChar == null) return;
+    _sleepHistory.clear();
+    notifyListeners();
+    addToProtocolLog("TX: 7A (Sync Sleep History)", isTx: true);
+    // Request Index 01 (based on log observation 0x7A 01)
+    await _writeChar!.write(PacketFactory.getSleepLogPacket(packetIndex: 0x01));
   }
 } // End Class BleService

@@ -1,0 +1,5 @@
+10:16:22 start bt 
+
+10:16:28 automatical refresh
+10:16:36 next sync
+10:16:45 another one  
