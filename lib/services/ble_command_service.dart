@@ -141,4 +141,54 @@ class BleCommandService {
         logMessage:
             "TX: 77 ${op.toRadixString(16)} ${type.toRadixString(16)} ($opName $typeName)");
   }
+
+  // --- New Feature Methods ---
+
+  Future<void> findDevice() async {
+    await send(PacketFactory.createFindDevicePacket(),
+        logMessage: "TX: 50 55 AA (Find Device)");
+  }
+
+  Future<void> requestGoals() async {
+    await send(PacketFactory.requestGoals(),
+        logMessage: "TX: 21 01 (Request Goals)");
+  }
+
+  // --- History Sync Wrappers ---
+
+  Future<void> fetchActivityHistory() async {
+    // 0x43 00 0F 00 60 00 (Today's steps)
+    // Note: PacketFactory.getStepsPacket defaults to dayOffset=0
+    await send(PacketFactory.getStepsPacket(),
+        logMessage: "TX: 43 ... (Fetch Steps)");
+  }
+
+  Future<void> fetchHeartRateHistory() async {
+    final now = DateTime.now();
+    await send(PacketFactory.getHeartRateLogPacket(now),
+        logMessage: "TX: 15 ... (Fetch HR)");
+  }
+
+  Future<void> fetchSpo2History() async {
+    // Uses 0xBC 2A
+    await send(PacketFactory.getSpo2LogPacketNew(),
+        logMessage: "TX: BC 2A ... (Fetch SpO2 BigData)");
+  }
+
+  Future<void> fetchStressHistory() async {
+    // 0x37
+    await send(PacketFactory.getStressHistoryPacket(),
+        logMessage: "TX: 37 ... (Fetch Stress)");
+  }
+
+  Future<void> fetchSleepHistory() async {
+    // Uses 0xBC 27
+    await send(PacketFactory.getSleepLogPacketNew(),
+        logMessage: "TX: BC 27 ... (Fetch Sleep BigData)");
+  }
+
+  Future<void> fetchHrvHistory() async {
+    await send(PacketFactory.getHrvLogPacket(packetIndex: 0),
+        logMessage: "TX: 39 00 ... (Fetch HRV)");
+  }
 }

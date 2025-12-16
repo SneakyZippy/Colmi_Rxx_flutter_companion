@@ -168,6 +168,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await bleService.rebootRing();
             },
           ),
+          ListTile(
+            title: const Text("Find Ring"),
+            subtitle: const Text("Make the ring vibrate."),
+            leading: const Icon(Icons.vibration),
+            onTap: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Sending Find command...")));
+              await bleService.findDevice();
+            },
+          ),
           const Padding(
             padding: EdgeInsets.all(16.0),
             child: Text(

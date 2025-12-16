@@ -60,7 +60,10 @@ class BleConstants {
 
   // Big Data Subtypes (0xBC)
   static const int subSpo2BigData = 0x2A;
+  static const int subSleepBigData = 0x27;
   static const int subBigDataEnd = 0xEE;
+
+  static const int cmdFindDevice = 0x50;
 
   // Sleep Types (Gadgetbridge Confirmed)
   static const int sleepLight = 0x02;

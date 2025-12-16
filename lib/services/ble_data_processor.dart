@@ -25,6 +25,10 @@ abstract class BleDataCallbacks {
   void onAutoConfigRead(String type, bool enabled); // Type: HR, SpO2, etc.
 
   void onNotification(int type);
+
+  void onGoalsRead(int steps, int calories, int distance, int sport, int sleep);
+  void onFindDevice();
+  void onMeasurementError(int type, int errorCode);
 }
 
 class BleDataProcessor {
@@ -36,6 +40,7 @@ class BleDataProcessor {
   List<int> _bigDataBuffer = [];
   int _bigDataExpectedLen = 0;
   bool _isReceivingBigData = false;
+  int _lastBigDataType = 0;
 
   // History Parsing State
   int _hrLogInterval = 5;
@@ -154,6 +159,14 @@ class BleDataProcessor {
         _handleSleepLog(data);
         break;
 
+      case BleConstants.cmdSetGoals: // 0x21
+        _handleGoals(data);
+        break;
+
+      case BleConstants.cmdFindDevice: // 0x50
+        _handleFindDevice(data);
+        break;
+
       // ... Add others as needed
     }
   }
@@ -169,29 +182,32 @@ class BleDataProcessor {
   }
 
   void _handleRealTimeMeasure(List<int> data) {
-    // 69 <Type> <Status/00> <Val>
+    // 69 <Type> <Status> <Val>
     if (data.length < 3) return;
     int type = data[1];
 
-    // Safety check for index
-    int val = 0;
-    if (data.length > 3) {
-      // Typically index 3 is value (69 01 00 48)
-      val = data[3];
-      // Fallback logic from original code
-      if (val == 0 && data.length > 2) val = data[2];
-    } else if (data.length > 2) {
-      val = data[2];
+    // Status is at index 2
+    int status = data[2];
+
+    if (status != 0) {
+      callbacks
+          .onProtocolLog("Realtime Measure Error: Type=$type Status=$status");
+      callbacks.onMeasurementError(type, status);
+      return;
     }
 
-    if (val > 0) {
-      if (type == BleConstants.typeHeartRate)
-        callbacks.onHeartRate(val);
-      else if (type == BleConstants.typeSpo2)
-        callbacks.onSpo2(val);
-      else if (type == BleConstants.typeStress)
-        callbacks.onStress(val);
-      else if (type == BleConstants.typeHrv) callbacks.onHrv(val);
+    // Value is at index 3
+    if (data.length > 3) {
+      int val = data[3];
+      if (val > 0) {
+        if (type == BleConstants.typeHeartRate)
+          callbacks.onHeartRate(val);
+        else if (type == BleConstants.typeSpo2)
+          callbacks.onSpo2(val);
+        else if (type == BleConstants.typeStress)
+          callbacks.onStress(val);
+        else if (type == BleConstants.typeHrv) callbacks.onHrv(val);
+      }
     }
   }
 
@@ -337,6 +353,7 @@ class BleDataProcessor {
 
     if (sub == BleConstants.subSpo2BigData) {
       // 0x2A
+      _lastBigDataType = sub;
       spo2DataReceived = true;
       // Index 6 start
       int index = 6;
@@ -363,15 +380,152 @@ class BleDataProcessor {
           }
         }
       }
-    } else if (sub == 0xEE) {
+    } else if (sub == BleConstants.subSleepBigData) {
+      // 0x27 - Sleep History
+      _lastBigDataType = sub;
+      // Gadgetbridge says structure is similar: [DaysAgo] [DayBytes] [Start] [End] etc...
+      // Or simply: DayIndex, Length ...
+      // Let's implement based on ColmiR0xPacketHandler.java historicalSleep logic.
+      // Offset 6 = Days In Packet?
+      // Check full packet structure: BC 27 Length_L Length_H 00 00 Days [DayData...]
+
+      // Note: _bigDataBuffer logic should have reassembled the full packet if needed,
+      // but if the packet is self-contained or part of a stream, we check headers.
+      // But _handleBigData assumes reassembly logic is done if using recursion, OR
+      // it handles the "final" payload.
+      // Since `data` passed here is the full buffer from `processData` recursion:
+
+      if (data.length < 7) return;
+      int daysInPacket = data[6];
+      int index = 7;
+      callbacks
+          .onProtocolLog("Parsing Sleep BigData (0xBC): Days=$daysInPacket");
+
+      for (int i = 0; i < daysInPacket; i++) {
+        if (index >= data.length) break;
+
+        // Structure per day:
+        // [DaysAgo] [DayBytes] [StartMins L] [StartMins H] [EndMins L] [EndMins H] [Stages...]
+        if (index + 6 > data.length) break;
+
+        int daysAgo = data[index];
+        int dayBytes =
+            data[index + 1]; // Total bytes for this day INCLUDING headers?
+        // GB: int dayBytes = value[index]; -> "for(j=4; j<dayBytes; j+=2)" implies dayBytes is length of subsequent data?
+        // Wait, GB says:
+        // int daysAgo = value[index]; index++;
+        // int dayBytes = value[index]; index++;
+        // int sleepStart = ...; index+=2;
+        // int sleepEnd = ...; index+=2;
+        // loop j=4; j<dayBytes
+        // IF j starts at 4, and we have read 4 bytes (start/end), then dayBytes INCLUDES expected 4 bytes.
+        // So day payload (stages) length is dayBytes - 4.
+
+        int sleepStartMins = data[index + 2] | (data[index + 3] << 8);
+        int sleepEndMins = data[index + 4] | (data[index + 5] << 8);
+
+        DateTime now = DateTime.now();
+        // Calculate session start date
+        // Note: daysAgo=0 is "Today", 1="Yesterday"
+        DateTime baseDate = DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: daysAgo));
+
+        // Refine Start Time: usually previous day evening
+        DateTime sessionStart = baseDate.add(Duration(minutes: sleepStartMins));
+
+        if (sleepStartMins > sleepEndMins) {
+          // Wrapped around midnight (Start 23:00, End 07:00)
+          // If daysAgo applies to "End Time" (WakeUp), then Start is daysAgo-1?
+          // GB logic: "if (sleepStart > sleepEnd) sessionStart.add(Calendar.DAY_OF_MONTH, -1);"
+          sessionStart = sessionStart.subtract(const Duration(days: 1));
+        }
+
+        callbacks.onProtocolLog(
+            "Sleep Session: Start=${sessionStart.toString()} Mins=$sleepStartMins->$sleepEndMins");
+
+        // Parse Stages
+        int stageDataStart = index + 6;
+        int stagesLength = dayBytes - 4; // Headers (Start/End) are 4 bytes
+        // GB loop: j=4 to dayBytes. index is current cursor.
+        // It reads value[index] (Stage) and value[index+1] (Duration).
+        // Each step increases index by 2.
+
+        DateTime stageTime = sessionStart;
+
+        // Safety check boundaries
+        if (stageDataStart + stagesLength > data.length) {
+          stagesLength = data.length - stageDataStart;
+        }
+
+        for (int k = 0; k < stagesLength; k += 2) {
+          if (stageDataStart + k + 1 >= data.length) break;
+
+          int type = data[stageDataStart + k];
+          int duration = data[stageDataStart + k + 1];
+
+          // Type mapping: 0x02=Light, 0x03=Deep, 0x05=Awake
+          callbacks.onSleepHistoryPoint(stageTime, type,
+              durationMinutes: duration);
+
+          stageTime = stageTime.add(Duration(minutes: duration));
+        }
+
+        // Advance main index
+        // GB: index += 6 for header, then + (dayBytes - 4) for stages.
+        // Total advance = 6 + dayBytes - 4 = 2 + dayBytes?
+        // Wait, GB: "index = 7".
+        // Loop: daysAgo(1) + dayBytes(1) + Start(2) + End(2) = 6 bytes.
+        // Then loops stages.
+        // So total bytes consumed = 6 + (dayBytes - 4).
+        // Correct.
+        index += 2 + dayBytes;
+      }
+    } else if (sub == BleConstants.subBigDataEnd) {
       // End
-      // Signal to Service that 0xBC ended?
-      // The Service tracked "If !dataReceived -> Trigger Old".
-      // We can callback:
-      callbacks.onProtocolLog(
-          "Big Data 0xBC Complete. Spo2Received: $spo2DataReceived");
-      // Maybe a specific callback for "SyncComplete"?
+      String typeStr = "Unknown";
+      if (_lastBigDataType == BleConstants.subSpo2BigData) {
+        typeStr = "SpO2";
+      } else if (_lastBigDataType == BleConstants.subSleepBigData) {
+        typeStr = "Sleep";
+      }
+
+      String extra = "";
+      if (_lastBigDataType == BleConstants.subSpo2BigData) {
+        extra = " Spo2Received: $spo2DataReceived";
+      }
+
+      callbacks.onProtocolLog("Big Data 0xBC Complete ($typeStr).$extra");
     }
+  }
+
+  void _handleGoals(List<int> data) {
+    // 21 ...
+    // Layout from GB: 21 00 Steps(4) Cals(4) Dist(4) Sport(2) Sleep(2)
+    if (data.length < 15) return;
+
+    int steps = data[2] | (data[3] << 8) | (data[4] << 16) | (data[5] << 24);
+    int calories = data[6] | (data[7] << 8) | (data[8] << 16) | (data[9] << 24);
+    int distance =
+        data[10] | (data[11] << 8) | (data[12] << 16) | (data[13] << 24);
+    int sport = data[14] | (data[15] << 8); // 2 bytes
+
+    // Wait, GB: sport(2), sleep(2). Total 4+4+4+2+2 = 16 bytes payload?
+    // Indices:
+    // Steps: 2,3,4,5
+    // Cals: 6,7,8,9
+    // Dist: 10,11,12,13
+    // Sport: 14,15 (2 bytes)
+    // Sleep: 16,17 (2 bytes)
+    // Packet MUST be at least 18 bytes.
+    if (data.length < 18) return;
+
+    int sleep = data[16] | (data[17] << 8);
+
+    callbacks.onGoalsRead(steps, calories, distance, sport, sleep);
+  }
+
+  void _handleFindDevice(List<int> data) {
+    callbacks.onFindDevice();
   }
 
   void _handleStepsLog(List<int> data) {

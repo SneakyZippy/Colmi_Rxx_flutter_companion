@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart'; // For PlatformException
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -285,7 +287,26 @@ class BleConnectionManager extends ChangeNotifier {
   // Helper for Command Service to send data
   Future<void> writeData(List<int> data) async {
     if (_writeChar != null) {
-      await _writeChar!.write(data);
+      try {
+        await _writeChar!.write(data);
+      } on PlatformException catch (e) {
+        // Handle "device is disconnected" race condition gracefully
+        if (e.message?.contains("device is disconnected") ?? false) {
+          debugPrint(
+              "Create: Write failed - Device disconnected unexpectedly: $e");
+          // Optionally trigger disconnect cleanup if not already happening
+          if (_connectedDevice != null) {
+            // We can't await disconnect() here easily without potential re-entrancy,
+            // but the stream listener should handle it.
+            // Just swallow the crash.
+          }
+          throw Exception("Device Disconnected during write");
+        } else {
+          rethrow;
+        }
+      } catch (e) {
+        rethrow;
+      }
     } else {
       throw Exception("Write Characteristic is null (Not connected?)");
     }

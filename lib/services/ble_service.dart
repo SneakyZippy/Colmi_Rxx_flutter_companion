@@ -10,6 +10,7 @@ import 'ble_data_processor.dart';
 import '../models/sleep_data.dart';
 import 'ble_connection_manager.dart';
 import 'ble_command_service.dart';
+import 'ble_sync_service.dart';
 
 import 'package:flutter/widgets.dart'; // For WidgetsBindingObserver
 
@@ -21,6 +22,7 @@ class BleService extends ChangeNotifier
 
   final BleConnectionManager _connectionManager = BleConnectionManager();
   late final BleCommandService _commandService;
+  late final BleSyncService _syncService;
 
   BleService._internal() {
     _processor = BleDataProcessor(this);
@@ -29,6 +31,15 @@ class BleService extends ChangeNotifier
     _commandService = BleCommandService(
       (data) => _connectionManager.writeData(data),
       logger: (msg) => addToProtocolLog(msg, isTx: true),
+    );
+    _syncService = BleSyncService(
+      _commandService,
+      isConnected: () => isConnected,
+      log: (msg) {
+        _lastLog = msg;
+        notifyListeners();
+      },
+      getSelectedDate: () => _selectedDate,
     );
 
     // Listen to Connection Manager
@@ -158,15 +169,13 @@ class BleService extends ChangeNotifier
   String get stepsTime => _formatTime(_lastStepsTime, isDaily: true);
 
   // --- Smart Sync State ---
-  DateTime? _lastSyncTime;
-  Timer? _periodicSyncTimer;
-  final Duration _syncInterval = const Duration(minutes: 60);
-  final Duration _minSyncDelay = const Duration(minutes: 15);
+  // Moved to BleSyncService
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _periodicSyncTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _syncService.dispose();
     super.dispose();
   }
 
@@ -176,42 +185,6 @@ class BleService extends ChangeNotifier
       debugPrint("App Resumed - Checking Smart Sync...");
       triggerSmartSync();
     }
-  }
-
-  /// Triggers a sync if conditions are met (Interval elapsed or manual override)
-  /// [force] : By-pass throttle logic (e.g. Pull-to-Refresh)
-  Future<void> triggerSmartSync({bool force = false}) async {
-    if (!isConnected) {
-      debugPrint("Smart Sync Ignored: Disconnected");
-      return;
-    }
-
-    final now = DateTime.now();
-    if (!force && _lastSyncTime != null) {
-      final elapsed = now.difference(_lastSyncTime!);
-      if (elapsed < _minSyncDelay) {
-        debugPrint(
-            "Smart Sync Throttled: Last sync was ${elapsed.inMinutes} mins ago (Min: ${_minSyncDelay.inMinutes})");
-        return;
-      }
-    }
-
-    debugPrint("Triggering Smart Sync...");
-    await startFullSyncSequence();
-    _lastSyncTime = DateTime.now();
-  }
-
-  void _startPeriodicSyncTimer() {
-    _periodicSyncTimer?.cancel();
-    _periodicSyncTimer = Timer.periodic(_syncInterval, (timer) {
-      debugPrint("Periodic Sync Triggered");
-      triggerSmartSync();
-    });
-  }
-
-  void _stopPeriodicSyncTimer() {
-    _periodicSyncTimer?.cancel();
-    _periodicSyncTimer = null;
   }
 
   String _formatTime(DateTime? dt, {bool isDaily = false}) {
@@ -288,8 +261,9 @@ class BleService extends ChangeNotifier
       await syncSettingsToRing();
 
       // Start Smart Sync
-      _startPeriodicSyncTimer();
-      triggerSmartSync();
+      // Start Smart Sync
+      _syncService.startPeriodicSyncTimer();
+      _syncService.triggerSmartSync();
     } catch (e) {
       debugPrint("Handshake failed: $e");
     }
@@ -585,18 +559,18 @@ class BleService extends ChangeNotifier
     debugPrint("Notification Type: ${type.toRadixString(16)}");
     if (type == 0x01) {
       debugPrint("Auto Sync Trigger: HR");
-      syncHeartRateHistory();
+      _syncService.syncHeartRateHistory();
     } else if (type == 0x03 || type == 0x2C) {
       debugPrint("Auto Sync Trigger: All (SpO2/Data)");
       // Chain syncs
       Future.delayed(Duration.zero, () async {
-        await syncHeartRateHistory();
+        await _syncService.syncHeartRateHistory();
         await Future.delayed(const Duration(milliseconds: 500));
-        await syncSpo2History();
+        await _syncService.syncSpo2History();
         await Future.delayed(const Duration(milliseconds: 500));
-        await syncStressHistory();
+        await _syncService.syncStressHistory();
         await Future.delayed(const Duration(milliseconds: 500));
-        await syncSleepHistory();
+        await _syncService.syncSleepHistory();
       });
     }
   }
@@ -789,40 +763,6 @@ class BleService extends ChangeNotifier
     }
   }
 
-  Future<void> startFullSyncSequence() async {
-    if (!_connectionManager.isConnected) return;
-
-    try {
-      final now = DateTime.now();
-      final difference = now.difference(_selectedDate).inDays;
-      int offset = difference < 0 ? 0 : difference;
-
-      debugPrint(
-          "Requesting Steps for Offset: $offset (${_selectedDate.toString()})");
-
-      await _commandService
-          .send(PacketFactory.getStepsPacket(dayOffset: offset));
-
-      // Explicitly chain other syncs
-      await Future.delayed(const Duration(seconds: 2));
-      await syncHeartRateHistory();
-
-      await Future.delayed(const Duration(seconds: 2));
-      await syncSpo2History();
-      await Future.delayed(const Duration(seconds: 4));
-
-      await syncStressHistory();
-      await Future.delayed(const Duration(seconds: 2));
-
-      await syncHrvHistory();
-
-      _lastLog = "Full Sync Completed";
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Error syncing history: $e");
-    }
-  }
-
   int _batteryLevel = 0;
   int get batteryLevel => _batteryLevel;
 
@@ -832,50 +772,6 @@ class BleService extends ChangeNotifier
       await _commandService.requestBattery();
     } catch (e) {
       debugPrint("Error getting battery: $e");
-    }
-  }
-
-  Future<void> syncHeartRateHistory() async {
-    if (!_connectionManager.isConnected) return;
-    try {
-      final startOfDay =
-          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-      debugPrint("Requesting HR for: $startOfDay");
-      await _commandService
-          .send(PacketFactory.getHeartRateLogPacket(startOfDay));
-    } catch (e) {
-      debugPrint("Error syncing HR history: $e");
-    }
-  }
-
-  Future<void> syncSpo2History() async {
-    if (!_connectionManager.isConnected) return;
-    try {
-      debugPrint("Syncing SpO2 History (Key 0x01)...");
-      await _commandService.send(PacketFactory.getSpo2LogPacketNew());
-    } catch (e) {
-      debugPrint("Error syncing SpO2 history: $e");
-    }
-  }
-
-  Future<void> syncStressHistory() async {
-    if (!_connectionManager.isConnected) return;
-    try {
-      debugPrint("Requesting Stress History (0x37)...");
-      await _commandService
-          .send(PacketFactory.getStressHistoryPacket(packetIndex: 0));
-    } catch (e) {
-      debugPrint("Error syncing Stress history: $e");
-    }
-  }
-
-  Future<void> syncHrvHistory() async {
-    if (!_connectionManager.isConnected) return;
-    try {
-      debugPrint("Requesting HRV History (0x39 Experimental)...");
-      await _commandService.send(PacketFactory.getHrvLogPacket(packetIndex: 0));
-    } catch (e) {
-      debugPrint("Error syncing HRV history: $e");
     }
   }
 
@@ -1067,15 +963,6 @@ class BleService extends ChangeNotifier
     _log("✅ Settings Sync Complete");
   }
 
-  Future<void> syncSleepHistory() async {
-    if (!_connectionManager.isConnected) return;
-    _sleepHistory.clear();
-    notifyListeners();
-    addToProtocolLog("TX: 7A (Sync Sleep History)", isTx: true);
-    await _commandService
-        .send(PacketFactory.getSleepLogPacket(packetIndex: 0x01));
-  }
-
   Future<void> factoryReset() async {
     await _commandService.factoryReset();
   }
@@ -1083,6 +970,20 @@ class BleService extends ChangeNotifier
   Future<void> setActivityState(int type, int op) async {
     await _commandService.setActivityState(type, op);
   }
+
+  // --- Sync Wrappers for Compatibility ---
+
+  Future<void> triggerSmartSync({bool force = false}) =>
+      _syncService.triggerSmartSync(force: force);
+
+  Future<void> startFullSyncSequence() => _syncService.startFullSyncSequence();
+
+  Future<void> syncHeartRateHistory() => _syncService.syncHeartRateHistory();
+  Future<void> syncSpo2History() => _syncService.syncSpo2History();
+  Future<void> syncStressHistory() => _syncService.syncStressHistory();
+  Future<void> syncSleepHistory() => _syncService.syncSleepHistory();
+  Future<void> syncStepsHistory() => _syncService.syncStepsHistory();
+  Future<void> syncHrvHistory() => _syncService.syncHrvHistory();
 
   // --- Legacy / Compatibility Methods (Forwarding) ---
 
@@ -1103,11 +1004,46 @@ class BleService extends ChangeNotifier
         logMessage: "TX: Enable Raw Data");
   }
 
-  Future<void> syncAllData() => startFullSyncSequence();
+  Future<void> syncAllData() => _syncService.startFullSyncSequence();
+
+  Future<void> findDevice() async {
+    if (!_connectionManager.isConnected) return;
+    await _commandService.findDevice();
+  }
+
+  Future<void> requestGoals() async {
+    if (!_connectionManager.isConnected) return;
+    await _commandService.requestGoals();
+  }
 
   Future<void> sendRawPacket(List<int> data) async {
     await _commandService.send(data,
         logMessage:
             "TX: ${data.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')} (Raw)");
   }
-} // End Class BleService
+
+  @override
+  void onGoalsRead(
+      int steps, int calories, int distance, int sport, int sleep) {
+    addToProtocolLog(
+        "Goals Read: Steps=$steps, Cals=$calories, Dist=$distance, Sport=$sport, Sleep=$sleep");
+    // TODO: Expose goals to UI
+  }
+
+  @override
+  void onFindDevice() {
+    addToProtocolLog("RX: Find Device (0x50) command received (Ignored)");
+    // User requested to leave "Find Phone" function out.
+  }
+
+  @override
+  void onMeasurementError(int type, int errorCode) {
+    String msg = "Measurement Error";
+    if (errorCode == 1)
+      msg = "Worn Incorrectly";
+    else if (errorCode == 2) msg = "Temporary Error / Measuring...";
+
+    addToProtocolLog("Measurement Error (Type $type): $msg ($errorCode)");
+    // TODO: Expose error to UI state if needed
+  }
+}

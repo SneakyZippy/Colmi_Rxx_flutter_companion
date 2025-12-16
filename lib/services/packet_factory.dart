@@ -401,4 +401,22 @@ class PacketFactory {
     // We will try sending the standard HR Disable: 16 02 00
     return disableHeartRate();
   }
+
+  // Find Device (0x50) - 50 55 AA
+  static Uint8List createFindDevicePacket() {
+    return createPacket(command: 0x50, data: [0x55, 0xAA]);
+  }
+
+  // Request Goals (0x21) - Readings
+  static Uint8List requestGoals() {
+    return createPacket(command: 0x21, data: [0x01]);
+  }
+
+  // Sleep Log using Big Data (0xBC)
+  // Gadgetbridge: BC 27 01 00 FF 00 FF (Type 0x27 for Sleep)
+  static Uint8List getSleepLogPacketNew() {
+    return createPacket(
+        command: BleConstants.cmdBigData,
+        data: [0x27, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
+  }
 }

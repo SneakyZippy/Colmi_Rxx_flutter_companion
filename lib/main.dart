@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/ble_service.dart';
-import 'features/home/home_screen.dart';
+import 'features/dashboard/dashboard_screen.dart';
 
 void main() {
   runApp(
@@ -18,12 +18,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Colmi Rxx App_V0.1',
+      title: 'Colmi Rxx App',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const DashboardScreen(),
     );
   }
 }

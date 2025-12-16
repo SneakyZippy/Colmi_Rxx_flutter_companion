@@ -5,15 +5,16 @@ import '../history/history_screen.dart';
 import '../sensor/sensor_screen.dart';
 import '../debug/debug_screen.dart';
 import '../settings/settings_screen.dart';
+import 'sync_options_screen.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
 
   @override
@@ -275,6 +276,28 @@ class DashboardView extends StatelessWidget {
                         foregroundColor: Colors.white,
                         textStyle: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const SyncOptionsScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.list_alt),
+                      label: const Text("SELECTIVE SYNC"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueAccent,
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                        side: const BorderSide(
+                            color: Colors.blueAccent, width: 2),
                       ),
                     ),
                   ),
