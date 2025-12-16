@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
+import '../../services/ble_service.dart';
 
 class SensorScreen extends StatefulWidget {
   const SensorScreen({super.key});

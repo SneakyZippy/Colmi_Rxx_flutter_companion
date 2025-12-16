@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
-import 'ble_constants.dart';
+import '../../services/ble_service.dart';
+import '../../services/ble_constants.dart';
 
 class DataDebugScreen extends StatelessWidget {
   const DataDebugScreen({super.key});

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
-import 'data_debug_screen.dart';
+import '../../services/ble_service.dart';
+import '../debug/data_debug_screen.dart';
 import 'widgets/history_chart_widget.dart';
-import 'features/widgets/sleep_graph.dart';
+import 'widgets/sleep_graph.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
