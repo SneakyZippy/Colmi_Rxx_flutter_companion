@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
-import 'packet_factory.dart';
+import '../../services/ble_service.dart';
 
 class CommandTesterScreen extends StatefulWidget {
   const CommandTesterScreen({super.key});

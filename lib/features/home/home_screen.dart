@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
-import 'history_screen.dart';
-import 'sensor_screen.dart';
-import 'debug_screen.dart';
-import 'settings_screen.dart';
+import '../../services/ble_service.dart';
+import '../history/history_screen.dart';
+import '../sensor/sensor_screen.dart';
+import '../debug/debug_screen.dart';
+import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});

@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'packet_factory.dart';
 import 'ble_constants.dart';
 import 'ble_data_processor.dart';
-import 'features/model/sleep_data.dart';
+import '../features/model/sleep_data.dart';
 
 import 'package:flutter/widgets.dart'; // For WidgetsBindingObserver
 

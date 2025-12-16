@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../ble_constants.dart';
-import '../model/sleep_data.dart';
-import 'dart:math';
+import '../../../services/ble_constants.dart';
+import '../../model/sleep_data.dart';
 
 class SleepGraph extends StatelessWidget {
   final List<SleepData> data;
