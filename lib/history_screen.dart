@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'ble_service.dart';
 import 'data_debug_screen.dart';
 import 'widgets/history_chart_widget.dart';
+import 'features/widgets/sleep_graph.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -15,7 +16,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: Consumer<BleService>(
@@ -65,6 +66,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               Tab(text: 'SpO2'),
               Tab(text: 'Stress'),
               Tab(text: 'HRV'),
+              Tab(text: 'Sleep'),
             ],
           ),
         ),
@@ -128,6 +130,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   onSync: () => ble.syncHrvHistory(),
                   minY: 0,
                   maxY: 200,
+                ),
+                // Sleep
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text("Sleep Stages",
+                          style: Theme.of(context).textTheme.titleLarge),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: SleepGraph(data: ble.sleepHistory),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => ble.syncSleepHistory(),
+                      child: const Text("Sync Sleep Data"),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
               ],
             );

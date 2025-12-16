@@ -65,7 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Text("Measure every ${bleService.hrInterval} minutes"),
                   trailing: DropdownButton<int>(
                     value: bleService.hrInterval,
-                    items: [1, 5, 10, 15, 30, 45, 60].map((int value) {
+                    items: [5, 10, 15, 30, 45, 60].map((int value) {
                       return DropdownMenuItem<int>(
                         value: value,
                         child: Text("$value min"),
