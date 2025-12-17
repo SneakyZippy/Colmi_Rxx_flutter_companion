@@ -285,10 +285,10 @@ class BleConnectionManager extends ChangeNotifier {
   }
 
   // Helper for Command Service to send data
-  Future<void> writeData(List<int> data) async {
+  Future<void> writeData(List<int> data, {bool withoutResponse = false}) async {
     if (_writeChar != null) {
       try {
-        await _writeChar!.write(data);
+        await _writeChar!.write(data, withoutResponse: withoutResponse);
       } on PlatformException catch (e) {
         // Handle "device is disconnected" race condition gracefully
         if (e.message?.contains("device is disconnected") ?? false) {

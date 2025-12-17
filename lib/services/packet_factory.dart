@@ -4,7 +4,9 @@ import 'ble_constants.dart';
 class PacketFactory {
   // Command Constants
   static const int cmdHeartRateMeasurement = 0x69; // 105 - Manual Start
+
   static const int cmdStopRealTime = 0x6A; // 106 - Manual Stop
+  static const int cmdRealTimeData = 0x43; // 67 - Realtime Data Config
 
   // Headers
   // Protocol: Command + Data (14 bytes) + Checksum
@@ -63,6 +65,11 @@ class PacketFactory {
     return Uint8List.fromList(packet);
   }
 
+  /// Creates a raw packet from the exact bytes provided.
+  static Uint8List createRawPacket(List<int> bytes) {
+    return Uint8List.fromList(bytes);
+  }
+
   /// Creates sample commands based on user request
   static Uint8List startHeartRate() {
     // 0x6901 - Request Heart Rate (Real-time)
@@ -70,6 +77,24 @@ class PacketFactory {
     return createPacket(
       command: cmdHeartRateMeasurement,
       data: [0x01],
+    );
+  }
+
+  /// 0xBC 27 Big Data Request (Sleep)
+  /// Standard format: 16 bytes padded. Key 0x01.
+  static Uint8List createSleepRequestPacket() {
+    // 0xBC 27 01 00 FF 00 FF (Padded to 16)
+    return createPacket(
+        command: BleConstants.cmdBigData,
+        data: [0x27, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
+  }
+
+  /// 0x43 Realtime Data Config Packet
+  /// From log: 43 00 0f 00 5f 01 00...
+  static Uint8List getRealtimeDataPacket() {
+    return createPacket(
+      command: cmdRealTimeData,
+      data: [0x00, 0x0F, 0x00, 0x5F, 0x01, 0x00], // Added trailing 0x00
     );
   }
 
@@ -410,13 +435,5 @@ class PacketFactory {
   // Request Goals (0x21) - Readings
   static Uint8List requestGoals() {
     return createPacket(command: 0x21, data: [0x01]);
-  }
-
-  // Sleep Log using Big Data (0xBC)
-  // Gadgetbridge: BC 27 01 00 FF 00 FF (Type 0x27 for Sleep)
-  static Uint8List getSleepLogPacketNew() {
-    return createPacket(
-        command: BleConstants.cmdBigData,
-        data: [0x27, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
   }
 }
