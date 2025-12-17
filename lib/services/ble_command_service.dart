@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'packet_factory.dart';
 
-typedef DataSender = Future<void> Function(List<int> data);
+typedef DataSender = Future<void> Function(List<int> data,
+    {bool withoutResponse});
 typedef Logger = void Function(String message);
 
 class BleCommandService {
@@ -10,11 +11,12 @@ class BleCommandService {
 
   BleCommandService(this._sender, {Logger? logger}) : _logger = logger;
 
-  Future<void> send(List<int> data, {String? logMessage}) async {
+  Future<void> send(List<int> data,
+      {String? logMessage, bool withoutResponse = false}) async {
     if (logMessage != null && _logger != null) {
       _logger!(logMessage);
     }
-    await _sender(data);
+    await _sender(data, withoutResponse: withoutResponse);
   }
 
   // --- Handshake / Setup ---
@@ -182,9 +184,46 @@ class BleCommandService {
   }
 
   Future<void> fetchSleepHistory() async {
-    // Uses 0xBC 27
-    await send(PacketFactory.getSleepLogPacketNew(),
-        logMessage: "TX: BC 27 ... (Fetch Sleep BigData)");
+    // 0. Ensure Bind/Auth (just in case)
+    // 1. Bind Action / Prep (0x48) - Use simple request (48 00...48) matching logs
+    try {
+      debugPrint('Step 1: Sending Bind Request (0x48)');
+      await send(PacketFactory.createBindRequest());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 2. Set Phone Name (0x04)
+      debugPrint('Step 2: Sending Set Phone Name (0x04)');
+      await send(PacketFactory.createSetPhoneNamePacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 3. Set Time (0x01)
+      debugPrint('Step 3: Sending Set Time (0x01)');
+      await send(PacketFactory.createSetTimePacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 4. Set User Profile (0x0A)
+      debugPrint('Step 4: Sending User Profile (0x0A)');
+      await send(PacketFactory.createUserProfilePacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 5. Realtime Data Config (0x43)
+      debugPrint('Step 5: Sending Realtime Data Config (0x43)');
+      await send(PacketFactory.getRealtimeDataPacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      debugPrint('Error in Prep steps: $e');
+    }
+
+    // 6. Request Sleep Data (0xBC 27)
+    // Variants 4-9
+    // Using Variant 4 (Standard Gadgetbridge Format: 16-byte)
+    debugPrint('Step 6: Requesting Sleep Data (0xBC 27)');
+    await send(PacketFactory.createSleepRequestPacket(), withoutResponse: true);
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    // 7. Legacy 0x7A (Packet 0) as fallback
+    await send(PacketFactory.getSleepLogPacket(packetIndex: 0),
+        logMessage: "TX: 7A 00 ... (Fetch Sleep Legacy P0)");
   }
 
   Future<void> fetchHrvHistory() async {

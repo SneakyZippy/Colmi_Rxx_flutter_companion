@@ -683,6 +683,20 @@ class BleDataProcessor {
     int daysInPacket = data[6];
     int index = 7;
 
+    // Fallback for short header format seen in logs: 7A 00 05 3C ...
+    // Indices: 0:7A, 1:00, 2:05, 3:3C.
+    // data[6] is 00.
+    if (daysInPacket == 0 && data.length > 4 && data[2] > 0 && data[2] < 10) {
+      daysInPacket = data[2];
+      // Index 3 (3C) might be total bytes or dayBytes?
+      // If we assume standard structure but shifted:
+      // Index 7 was start of data.
+      // Here, start of data might be Index 4?
+      index = 4;
+      callbacks.onProtocolLog(
+          "Sleep Packet (0x7A): Detected Short Header. Days=$daysInPacket");
+    }
+
     for (int i = 0; i < daysInPacket; i++) {
       if (index + 6 >= data.length) break;
 

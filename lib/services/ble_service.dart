@@ -29,7 +29,8 @@ class BleService extends ChangeNotifier
 
     // Initialize Command Service
     _commandService = BleCommandService(
-      (data) => _connectionManager.writeData(data),
+      (data, {bool withoutResponse = false}) =>
+          _connectionManager.writeData(data, withoutResponse: withoutResponse),
       logger: (msg) => addToProtocolLog(msg, isTx: true),
     );
     _syncService = BleSyncService(
