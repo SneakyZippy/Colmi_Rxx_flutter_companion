@@ -27,4 +27,4 @@ https://github.com/tahnok/colmi_r02_client
 these might be a other model of the ring.
 colmi_r06_fbp_main.dart
 colmi_r06_fbpcolmi_ring.dart
-https://mats.coffee/blog/ring-reverse-engineering
+https://mats.coffee/blog/ring-reverse-engineering   

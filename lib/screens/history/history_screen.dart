@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
-import 'data_debug_screen.dart';
-import 'widgets/history_chart_widget.dart';
+import 'package:flutter_application_1/services/ble/ble_service.dart';
+import '../debug/data_debug_screen.dart';
+import '../../widgets/history_chart_widget.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});

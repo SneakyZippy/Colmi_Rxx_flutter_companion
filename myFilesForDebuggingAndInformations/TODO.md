@@ -1,5 +1,12 @@
 # 🗺️ Project Roadmap & TODOs
 
+
+Build APK
+flutter build apk --debug
+flutter build apk --release
+
+
+
 ## 🔭 Open Tasks (Immediate Next Steps)
 - [ ] **Data Visualization:**
     - [x] Real-time Heart Rate.

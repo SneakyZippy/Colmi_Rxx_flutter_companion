@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
+import 'package:flutter_application_1/services/ble/ble_service.dart';
 import 'command_tester_screen.dart';
 
 class DebugScreen extends StatelessWidget {

@@ -124,18 +124,18 @@ class PacketFactory {
 
   // Reference: disableStressMonitoring (hex: '360200')
   static Uint8List stopStress() {
+    // 0x6A 0x08 0x00 - Stop Real-Time Stress (Type 0x08)
     return createPacket(
-      command: 0x36,
-      data: [0x02, 0x00],
+      command: cmdStopRealTime,
+      data: [BleConstants.typeStress, 0x00],
     );
   }
 
   static Uint8List startStress() {
-    // 0x36 0x02 0x01 - Start Stress Measurement (Verified Golden Log)
-    // Note: 0x36 0x02 seems to be the "Config/Control" subcommand grouping
+    // 0x69 0x08 0x01 - Start Real-Time Stress
     return createPacket(
-      command: 0x36,
-      data: [0x02, 0x01],
+      command: cmdHeartRateMeasurement,
+      data: [BleConstants.typeStress, 0x01],
     );
   }
 

@@ -1,113 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'ble_service.dart';
-import 'history_screen.dart';
-import 'sensor_screen.dart';
-import 'debug_screen.dart';
-import 'settings_screen.dart';
+import 'package:flutter_application_1/services/ble/ble_service.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // Listen for connection changes to kick user to dashboard if disconnected
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ble = Provider.of<BleService>(context, listen: false);
-      ble.addListener(_handleConnectionChange);
-    });
-  }
-
-  @override
-  void dispose() {
-    final ble = Provider.of<BleService>(context, listen: false);
-    ble.removeListener(_handleConnectionChange);
-    super.dispose();
-  }
-
-  void _handleConnectionChange() {
-    final ble = Provider.of<BleService>(context, listen: false);
-    // If we lose connection and are not on the dashboard, kick back to dashboard
-    if (!ble.isConnected && _selectedIndex != 0) {
-      if (mounted) {
-        setState(() {
-          _selectedIndex = 0;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("Connection lost. Returning to Dashboard.")),
-        );
-      }
-    }
-  }
-
-  // Pages for Navigation
-  // 0: Dashboard
-  // 1: Measure
-  // 2: History
-  // 3: Debug
-  // 4: Settings
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Pages List (Lazy load or keep alive?)
-    // Keeping it simple with indexed stack or just switching widgets
-    final List<Widget> pages = [
-      const DashboardView(),
-      const SensorScreen(),
-      const HistoryScreen(),
-      const DebugScreen(),
-      const SettingsScreen(),
-    ];
-
-    return Scaffold(
-      body: pages[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sensors),
-            label: 'Measure',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history),
-            label: 'History',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bug_report),
-            label: 'Debug',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class DashboardView extends StatelessWidget {
-  const DashboardView({super.key});
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -278,11 +174,97 @@ class DashboardView extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showSyncSelectionDialog(context, ble),
+                      icon: const Icon(Icons.checklist),
+                      label: const Text("SYNC SPECIFIC DATA"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueAccent,
+                        side: const BorderSide(color: Colors.blueAccent),
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _showSyncSelectionDialog(BuildContext context, BleService ble) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Select Data to Sync"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.directions_walk, color: Colors.orange),
+              title: const Text("Steps"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncStepsHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Steps...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite, color: Colors.red),
+              title: const Text("Heart Rate"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncHeartRateHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Heart Rate...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.water_drop, color: Colors.blue),
+              title: const Text("SpO2"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncSpo2History();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing SpO2...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.psychology, color: Colors.purple),
+              title: const Text("Stress"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncStressHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Stress...")));
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.monitor_heart, color: Colors.deepPurple),
+              title: const Text("HRV"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncHrvHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing HRV...")));
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          )
+        ],
       ),
     );
   }
