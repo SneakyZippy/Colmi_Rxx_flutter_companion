@@ -18,6 +18,7 @@ Get the latest APK here:
 ## 📸 Screenshots
 
 | Dashboard | Settings | History |
+| Dashboard | Settings | History |
 | :---: | :---: | :---: |
 | <img src="screenshots/Dashboard.png" width="300" /> | <img src="screenshots/Settings.png" width="300" /> | <img src="screenshots/HistoryHR.png" width="300" /> |
 
