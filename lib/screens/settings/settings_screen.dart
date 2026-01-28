@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-<<<<<<<< HEAD:lib/features/settings/settings_screen.dart
-import '../../services/ble_service.dart';
-========
 import 'package:flutter_application_1/services/ble/ble_service.dart';
 import 'auto_monitoring_screen.dart';
->>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/settings/settings_screen.dart
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -67,70 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-<<<<<<<< HEAD:lib/features/settings/settings_screen.dart
-          Column(
-            children: [
-              SwitchListTile(
-                title: const Text("Heart Rate Monitoring"),
-                subtitle: const Text("Enable automatic periodic measurement."),
-                value: bleService.hrAutoEnabled,
-                onChanged: (bool value) {
-                  bleService
-                      .setAutoHrInterval(value ? bleService.hrInterval : 0);
-                },
-              ),
-              if (bleService.hrAutoEnabled)
-                ListTile(
-                  title: const Text("Measurement Interval"),
-                  subtitle:
-                      Text("Measure every ${bleService.hrInterval} minutes"),
-                  trailing: DropdownButton<int>(
-                    value: bleService.hrInterval,
-                    items: [5, 10, 15, 30, 45, 60].map((int value) {
-                      return DropdownMenuItem<int>(
-                        value: value,
-                        child: Text("$value min"),
-                      );
-                    }).toList(),
-                    onChanged: (int? newValue) {
-                      if (newValue != null) {
-                        bleService.setAutoHrInterval(newValue);
-                      }
-                    },
-                  ),
-                ),
-            ],
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text("SpO2 Monitoring"),
-            subtitle: const Text("Automatically measures SpO2 periodically."),
-            value: bleService.spo2AutoEnabled,
-            onChanged: (bool value) {
-              bleService.setAutoSpo2(value);
-            },
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text("Stress Monitoring"),
-            subtitle: const Text("Starts periodic stress measurement."),
-            value: bleService.stressAutoEnabled,
-            onChanged: (bool value) {
-              bleService.setAutoStress(value);
-            },
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text("HRV Monitoring (Experimental)"),
-            subtitle: const Text("Enables Scheduled HRV (0x38)."),
-            value: bleService.hrvAutoEnabled,
-            onChanged: (bool value) {
-              bleService.setAutoHrv(value);
-            },
-          ),
-          const Divider(),
-========
->>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/settings/settings_screen.dart
+
           ListTile(
             title: const Text("Pair Ring"),
             subtitle: const Text(

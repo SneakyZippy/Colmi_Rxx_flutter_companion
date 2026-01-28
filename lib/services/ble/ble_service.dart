@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'packet_factory.dart';
 import 'ble_constants.dart';
 import 'ble_data_processor.dart';
+import 'package:flutter_application_1/models/sleep_data.dart';
 // New Components
 import 'ble_logger.dart';
 import 'ble_scanner.dart';
@@ -116,12 +117,14 @@ class BleService extends ChangeNotifier
   final List<Point> _stressHistory = [];
   final List<Point> _hrvHistory = [];
   final List<Point> _stepsHistory = [];
+  final List<SleepData> _sleepHistory = [];
 
   List<Point> get hrHistory => List.unmodifiable(_hrHistory);
   List<Point> get spo2History => List.unmodifiable(_spo2History);
   List<Point> get stressHistory => List.unmodifiable(_stressHistory);
   List<Point> get hrvHistory => List.unmodifiable(_hrvHistory);
   List<Point> get stepsHistory => List.unmodifiable(_stepsHistory);
+  List<SleepData> get sleepHistory => List.unmodifiable(_sleepHistory);
 
   // Raw Streams
   final StreamController<List<int>> _accelStreamController =
@@ -522,6 +525,18 @@ class BleService extends ChangeNotifier
   }
 
   @override
+  void onSleepHistoryPoint(DateTime timestamp, int sleepStage,
+      {int durationMinutes = 0}) {
+    _sleepHistory.add(SleepData(
+      timestamp: timestamp,
+      stage: sleepStage,
+      durationMinutes: durationMinutes,
+    ));
+    _sleepHistory.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    notifyListeners();
+  }
+
+  @override
   void onAutoConfigRead(String type, bool enabled) {
     if (type == "HR") {
       _hrAutoEnabled = enabled;
@@ -550,6 +565,32 @@ class BleService extends ChangeNotifier
         await syncStressHistory();
       });
     }
+  }
+
+  @override
+  void onFindDevice() {
+    debugPrint("Ring requested FIND DEVICE");
+    _logger.setLastLog("Ring Find Device Request");
+  }
+
+  @override
+  void onGoalsRead(
+      int steps, int calories, int distance, int sport, int sleep) {
+    debugPrint(
+        "Goals: Steps=$steps Cals=$calories Dist=$distance Sport=$sport Sleep=$sleep");
+    // TODO: Expose these if needed in UI
+  }
+
+  @override
+  void onMeasurementError(int type, int errorCode) {
+    debugPrint("Measurement Error: Type=$type Code=$errorCode");
+    _logger.setLastLog("Error: T=$type C=$errorCode");
+  }
+
+  // --- Device Management Commands ---
+  Future<void> findDevice() async {
+    if (_writeChar == null) return;
+    await _writeChar!.write(PacketFactory.createFindDevicePacket());
   }
 
   // --- Sensor Commands (Delegate to Controller) ---
@@ -715,6 +756,49 @@ class BleService extends ChangeNotifier
   Future<void> syncHrvHistory() async {
     if (_writeChar == null) return;
     await _writeChar!.write(PacketFactory.getHrvLogPacket());
+  }
+
+  Future<void> syncSleepHistory() async {
+    // 0. Ensure Bind/Auth (just in case)
+    // 1. Bind Action / Prep (0x48) - Use simple request (48 00...48) matching logs
+    try {
+      debugPrint('Step 1: Sending Bind Request (0x48)');
+      await _writeChar!.write(PacketFactory.createBindRequest());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 2. Set Phone Name (0x04)
+      debugPrint('Step 2: Sending Set Phone Name (0x04)');
+      await _writeChar!.write(PacketFactory.createSetPhoneNamePacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 3. Set Time (0x01)
+      debugPrint('Step 3: Sending Set Time (0x01)');
+      await _writeChar!.write(PacketFactory.createSetTimePacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 4. Set User Profile (0x0A)
+      debugPrint('Step 4: Sending User Profile (0x0A)');
+      await _writeChar!.write(PacketFactory.createUserProfilePacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // 5. Realtime Data Config (0x43)
+      debugPrint('Step 5: Sending Realtime Data Config (0x43)');
+      await _writeChar!.write(PacketFactory.getRealtimeDataPacket());
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      debugPrint('Error in Prep steps: $e');
+    }
+
+    // 6. Request Sleep Data (0xBC 27)
+    // Variants 4-9
+    // Using Variant 4 (Standard Gadgetbridge Format: 16-byte)
+    debugPrint('Step 6: Requesting Sleep Data (0xBC 27)');
+    await _writeChar!.write(
+        PacketFactory.createSleepRequestPacket()); // withoutResponse: true?
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    // 7. Legacy 0x7A (Packet 0) as fallback
+    await _writeChar!.write(PacketFactory.getSleepLogPacket(packetIndex: 0));
   }
 
   Future<void> getBatteryLevel() async {

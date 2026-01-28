@@ -1,126 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-<<<<<<<< HEAD:lib/features/dashboard/dashboard_screen.dart
-import '../../services/ble_service.dart';
-import '../history/history_screen.dart';
-import '../sensor/sensor_screen.dart';
-import '../debug/debug_screen.dart';
-import '../settings/settings_screen.dart';
-import 'sync_options_screen.dart';
-
-class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
-
-  @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // Listen for connection changes to kick user to dashboard if disconnected
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ble = Provider.of<BleService>(context, listen: false);
-      ble.addListener(_handleConnectionChange);
-    });
-  }
-
-  @override
-  void dispose() {
-    final ble = Provider.of<BleService>(context, listen: false);
-    ble.removeListener(_handleConnectionChange);
-    super.dispose();
-  }
-
-  void _handleConnectionChange() {
-    final ble = Provider.of<BleService>(context, listen: false);
-    // If we lose connection and are not on the dashboard, kick back to dashboard
-    if (!ble.isConnected && _selectedIndex != 0) {
-      if (mounted) {
-        setState(() {
-          _selectedIndex = 0;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("Connection lost. Returning to Dashboard.")),
-        );
-      }
-    }
-  }
-
-  // Pages for Navigation
-  // 0: Dashboard
-  // 1: Measure
-  // 2: History
-  // 3: Debug
-  // 4: Settings
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Pages List (Lazy load or keep alive?)
-    // Keeping it simple with indexed stack or just switching widgets
-    final List<Widget> pages = [
-      const DashboardView(),
-      const SensorScreen(),
-      const HistoryScreen(),
-      const DebugScreen(),
-      const SettingsScreen(),
-    ];
-
-    return Scaffold(
-      body: pages[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sensors),
-            label: 'Measure',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history),
-            label: 'History',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bug_report),
-            label: 'Debug',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class DashboardView extends StatelessWidget {
-  const DashboardView({super.key});
-========
 import 'package:flutter_application_1/services/ble/ble_service.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
->>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/dashboard/dashboard_screen.dart
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ringularity V0.0.4 Dashboard')),
+      appBar: AppBar(title: const Text('Ringularity V0.0.5 Dashboard')),
       body: Consumer<BleService>(
         builder: (context, ble, child) {
           return SingleChildScrollView(
@@ -290,23 +178,6 @@ class DashboardScreen extends StatelessWidget {
                   SizedBox(
                     height: 50,
                     child: OutlinedButton.icon(
-<<<<<<<< HEAD:lib/features/dashboard/dashboard_screen.dart
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const SyncOptionsScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.list_alt),
-                      label: const Text("SELECTIVE SYNC"),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blueAccent,
-                        textStyle: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
-                        side: const BorderSide(
-                            color: Colors.blueAccent, width: 2),
-========
                       onPressed: () => _showSyncSelectionDialog(context, ble),
                       icon: const Icon(Icons.checklist),
                       label: const Text("SYNC SPECIFIC DATA"),
@@ -315,7 +186,6 @@ class DashboardScreen extends StatelessWidget {
                         side: const BorderSide(color: Colors.blueAccent),
                         textStyle: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
->>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/dashboard/dashboard_screen.dart
                       ),
                     ),
                   ),

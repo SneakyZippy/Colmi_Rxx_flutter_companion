@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-<<<<<<<< HEAD:lib/features/debug/debug_screen.dart
-import '../../services/ble_service.dart';
-========
 import 'package:flutter_application_1/services/ble/ble_service.dart';
->>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/debug/debug_screen.dart
 import 'command_tester_screen.dart';
 
 class DebugScreen extends StatelessWidget {

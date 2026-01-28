@@ -436,4 +436,9 @@ class PacketFactory {
   static Uint8List requestGoals() {
     return createPacket(command: 0x21, data: [0x01]);
   }
+
+  static Uint8List createFactoryResetPacket() {
+    // FF 66 66
+    return createPacket(command: 0xFF, data: [0x66, 0x66]);
+  }
 }
