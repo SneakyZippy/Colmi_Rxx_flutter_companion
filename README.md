@@ -17,9 +17,9 @@ Get the latest APK here:
 
 ## 📸 Screenshots
 
-| Home Screen | Live Monitor | History |
+| Dashboard | Settings | History |
 | :---: | :---: | :---: |
-| ![Home](screenshots/home_placeholder.png) | ![Live](screenshots/live_placeholder.png) | ![History](screenshots/history_placeholder.png) |
+| ![Dashboard](screenshots/Dashboard.png) | ![Settings](screenshots/Settings.png) | ![History](screenshots/HistoryHR.png) |
 
 
 ## 🛠️ Tech Stack
