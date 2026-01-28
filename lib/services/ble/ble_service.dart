@@ -10,7 +10,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'packet_factory.dart';
 import 'ble_constants.dart';
 import 'ble_data_processor.dart';
+<<<<<<< HEAD
 import 'package:flutter_application_1/models/sleep_data.dart';
+=======
+>>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
 // New Components
 import 'ble_logger.dart';
 import 'ble_scanner.dart';
@@ -117,14 +120,20 @@ class BleService extends ChangeNotifier
   final List<Point> _stressHistory = [];
   final List<Point> _hrvHistory = [];
   final List<Point> _stepsHistory = [];
+<<<<<<< HEAD
   final List<SleepData> _sleepHistory = [];
+=======
+>>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
 
   List<Point> get hrHistory => List.unmodifiable(_hrHistory);
   List<Point> get spo2History => List.unmodifiable(_spo2History);
   List<Point> get stressHistory => List.unmodifiable(_stressHistory);
   List<Point> get hrvHistory => List.unmodifiable(_hrvHistory);
   List<Point> get stepsHistory => List.unmodifiable(_stepsHistory);
+<<<<<<< HEAD
   List<SleepData> get sleepHistory => List.unmodifiable(_sleepHistory);
+=======
+>>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
 
   // Raw Streams
   final StreamController<List<int>> _accelStreamController =
@@ -525,6 +534,7 @@ class BleService extends ChangeNotifier
   }
 
   @override
+<<<<<<< HEAD
   void onSleepHistoryPoint(DateTime timestamp, int sleepStage,
       {int durationMinutes = 0}) {
     _sleepHistory.add(SleepData(
@@ -537,6 +547,8 @@ class BleService extends ChangeNotifier
   }
 
   @override
+=======
+>>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
   void onAutoConfigRead(String type, bool enabled) {
     if (type == "HR") {
       _hrAutoEnabled = enabled;
@@ -567,6 +579,7 @@ class BleService extends ChangeNotifier
     }
   }
 
+<<<<<<< HEAD
   @override
   void onFindDevice() {
     debugPrint("Ring requested FIND DEVICE");
@@ -593,6 +606,8 @@ class BleService extends ChangeNotifier
     await _writeChar!.write(PacketFactory.createFindDevicePacket());
   }
 
+=======
+>>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
   // --- Sensor Commands (Delegate to Controller) ---
   // Mutual exclusion is handled here or updated in Controller.
   // We keep mutual exclusion simple here.
@@ -758,6 +773,7 @@ class BleService extends ChangeNotifier
     await _writeChar!.write(PacketFactory.getHrvLogPacket());
   }
 
+<<<<<<< HEAD
   Future<void> syncSleepHistory() async {
     // 0. Ensure Bind/Auth (just in case)
     // 1. Bind Action / Prep (0x48) - Use simple request (48 00...48) matching logs
@@ -801,6 +817,8 @@ class BleService extends ChangeNotifier
     await _writeChar!.write(PacketFactory.getSleepLogPacket(packetIndex: 0));
   }
 
+=======
+>>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
   Future<void> getBatteryLevel() async {
     if (_writeChar == null) return;
     await _writeChar!.write(PacketFactory.getBatteryPacket());

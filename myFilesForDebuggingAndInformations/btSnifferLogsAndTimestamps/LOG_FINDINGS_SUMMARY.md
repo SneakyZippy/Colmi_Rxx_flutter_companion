@@ -43,28 +43,6 @@ The "automatical refresh" and "next sync" events trigger the **exact same sequen
 
 ## 📂 Previous Findings (Context)
 
-## 1. Heart Rate Monitoring (`btSnifferHRTab.txt`)
-*   **Auto/Periodic Mode:**
-    *   **Command:** `0x16`
-    *   **Structure:** `16 02 [Enable] [Interval]`
-    *   **Values:**
-        *   `Enable`: `0x01` (On), `0x00`/`0x02` (Off)
-        *   `Interval`: Minutes (e.g., `05`, `0A`=10, `1E`=30, `3C`=60)
-    *   **Example:** `16 02 01 05` = Enable Auto HR every 5 minutes.
-*   **Manual/Real-Time Mode:**
-    *   **Start:** `69 01 00`
-    *   **Stop:** `6A 01 00`
-
-## 2. HRV Monitoring (`btSnifferHRVTab.txt/.log`)
-The log revealed a previously unknown command for Heart Rate Variability.
-*   **Auto/Scheduled Mode (New Discovery):**
-    *   **Command:** `0x38`
-    *   **Enable:** `38 02 01 00...`
-    *   **Disable:** `38 02 00 00...`
-*   **Manual/Real-Time Mode:**
-    *   **Start:** `69 0A 00` (Type `0xA` = HRV/Stress)
-    *   **Stop:** `6A 0A 00`
-
 ## 2. SpO2 Monitoring (`btSnifferSPO2Tab.txt/.log` + `SyncProcessAsText3`)
 *   **Auto/History Sync (CONFIRMED 1:1):**
     *   **Protocol:** `0xBC` (New Command Set)
