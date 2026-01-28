@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+<<<<<<<< HEAD:lib/features/debug/data_debug_screen.dart
 import '../../services/ble_service.dart';
 import '../../services/ble_constants.dart';
+========
+import 'package:flutter_application_1/services/ble/ble_service.dart';
+>>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/debug/data_debug_screen.dart
 
 class DataDebugScreen extends StatelessWidget {
   const DataDebugScreen({super.key});

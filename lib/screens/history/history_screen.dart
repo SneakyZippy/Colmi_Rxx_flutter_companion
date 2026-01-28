@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+<<<<<<<< HEAD:lib/features/history/history_screen.dart
 import '../../services/ble_service.dart';
 import '../debug/data_debug_screen.dart';
 import 'widgets/history_chart_widget.dart';
 import 'widgets/sleep_graph.dart';
+========
+import 'package:flutter_application_1/services/ble/ble_service.dart';
+import '../debug/data_debug_screen.dart';
+import '../../widgets/history_chart_widget.dart';
+>>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/history/history_screen.dart
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});

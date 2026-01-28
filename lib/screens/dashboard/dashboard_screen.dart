@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+<<<<<<<< HEAD:lib/features/dashboard/dashboard_screen.dart
 import '../../services/ble_service.dart';
 import '../history/history_screen.dart';
 import '../sensor/sensor_screen.dart';
@@ -109,6 +110,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 class DashboardView extends StatelessWidget {
   const DashboardView({super.key});
+========
+import 'package:flutter_application_1/services/ble/ble_service.dart';
+
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({super.key});
+>>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/dashboard/dashboard_screen.dart
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +290,7 @@ class DashboardView extends StatelessWidget {
                   SizedBox(
                     height: 50,
                     child: OutlinedButton.icon(
+<<<<<<<< HEAD:lib/features/dashboard/dashboard_screen.dart
                       onPressed: () {
                         Navigator.push(
                           context,
@@ -298,6 +306,16 @@ class DashboardView extends StatelessWidget {
                             fontSize: 16, fontWeight: FontWeight.bold),
                         side: const BorderSide(
                             color: Colors.blueAccent, width: 2),
+========
+                      onPressed: () => _showSyncSelectionDialog(context, ble),
+                      icon: const Icon(Icons.checklist),
+                      label: const Text("SYNC SPECIFIC DATA"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueAccent,
+                        side: const BorderSide(color: Colors.blueAccent),
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+>>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/dashboard/dashboard_screen.dart
                       ),
                     ),
                   ),
@@ -306,6 +324,77 @@ class DashboardView extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _showSyncSelectionDialog(BuildContext context, BleService ble) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Select Data to Sync"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.directions_walk, color: Colors.orange),
+              title: const Text("Steps"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncStepsHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Steps...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite, color: Colors.red),
+              title: const Text("Heart Rate"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncHeartRateHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Heart Rate...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.water_drop, color: Colors.blue),
+              title: const Text("SpO2"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncSpo2History();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing SpO2...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.psychology, color: Colors.purple),
+              title: const Text("Stress"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncStressHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Stress...")));
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.monitor_heart, color: Colors.deepPurple),
+              title: const Text("HRV"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncHrvHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing HRV...")));
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          )
+        ],
       ),
     );
   }

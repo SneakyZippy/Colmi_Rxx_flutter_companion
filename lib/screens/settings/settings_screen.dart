@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+<<<<<<<< HEAD:lib/features/settings/settings_screen.dart
 import '../../services/ble_service.dart';
+========
+import 'package:flutter_application_1/services/ble/ble_service.dart';
+import 'auto_monitoring_screen.dart';
+>>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/settings/settings_screen.dart
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -40,13 +45,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
+          ListTile(
+            title: const Text("Automatic Monitoring"),
+            subtitle: const Text("Configure periodic HR, SpO2, Stress, etc."),
+            leading: const Icon(Icons.timer),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const AutoMonitoringScreen()),
+              );
+            },
+          ),
+          const Divider(),
+          // Other Settings
           const Padding(
             padding: EdgeInsets.all(16.0),
             child: Text(
-              "Automatic Health Monitoring",
+              "Device Management",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
+<<<<<<<< HEAD:lib/features/settings/settings_screen.dart
           Column(
             children: [
               SwitchListTile(
@@ -108,6 +129,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           const Divider(),
+========
+>>>>>>>> b2f525c (refactor: reorganize project structure and enhance dashboard sync):lib/screens/settings/settings_screen.dart
           ListTile(
             title: const Text("Pair Ring"),
             subtitle: const Text(

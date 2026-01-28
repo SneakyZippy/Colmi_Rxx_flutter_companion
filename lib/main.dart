@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'services/ble_service.dart';
-import 'features/dashboard/dashboard_screen.dart';
+import 'package:flutter_application_1/services/ble/ble_service.dart';
+import 'screens/main_navigation.dart';
 
 void main() {
   runApp(
@@ -23,7 +23,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const DashboardScreen(),
+      home: const MainNavigation(),
     );
   }
 }
