@@ -63,10 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-<<<<<<< HEAD
 
-=======
->>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
           ListTile(
             title: const Text("Pair Ring"),
             subtitle: const Text(

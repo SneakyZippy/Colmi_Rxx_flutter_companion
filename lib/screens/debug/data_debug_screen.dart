@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_application_1/services/ble/ble_service.dart';
-<<<<<<< HEAD
 import 'package:flutter_application_1/services/ble/ble_constants.dart';
-=======
->>>>>>> b2f525c7f630f0864e0447b568da968197bb0050
 
 class DataDebugScreen extends StatelessWidget {
   const DataDebugScreen({super.key});
