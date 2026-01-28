@@ -8,7 +8,7 @@ An open-source, unofficial companion application for the **Colmi R12 Smart Ring*
 *   **Live Monitoring:** Real-time Heart Rate, SpO2, HRV and Stress monitoring.
 *   **Data Sync:** Granular synchronization of historic logs (Sleep, Steps, HR, HRV Stress) from the ring's flash memory.
 *   **Protocol Debugging:** Built-in console to view raw HEX packets for reverse-engineering.
-*   **Cross-Platform:** Runs on **Android** and **iOS**.
+*   **Cross-Platform:** Runs on **Android** and (should) run on **iOS**.
 
 ## 📥 Downloads
 
@@ -17,9 +17,9 @@ Get the latest APK here:
 
 ## 📸 Screenshots
 
-| Home Screen | Live Monitor | History |
+| Dashboard | Settings | History |
 | :---: | :---: | :---: |
-| ![Home](screenshots/home_placeholder.png) | ![Live](screenshots/live_placeholder.png) | ![History](screenshots/history_placeholder.png) |
+| <img src="screenshots/Dashboard.png" width="300" /> | <img src="screenshots/Settings.png" width="300" /> | <img src="screenshots/HistoryHR.png" width="300" /> |
 
 
 ## 🛠️ Tech Stack
