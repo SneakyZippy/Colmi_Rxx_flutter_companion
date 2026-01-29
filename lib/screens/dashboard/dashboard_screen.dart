@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_application_1/services/ble/ble_service.dart';
+import '../measurements/manual_hr_screen.dart';
+import '../measurements/manual_spo2_screen.dart';
+import '../measurements/manual_stress_screen.dart';
+import '../measurements/manual_hrv_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -116,6 +120,11 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.favorite,
                         color: Colors.red,
                         time: ble.heartRateTime,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const ManualHrScreen()),
+                        ),
                       ),
                       _MetricCard(
                         title: "SpO2",
@@ -124,6 +133,11 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.water_drop,
                         color: Colors.blue,
                         time: ble.spo2Time,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const ManualSpo2Screen()),
+                        ),
                       ),
                       _MetricCard(
                         title: "Stress",
@@ -132,6 +146,11 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.psychology,
                         color: Colors.purple,
                         time: ble.stressTime,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const ManualStressScreen()),
+                        ),
                       ),
                       _MetricCard(
                         title: "HRV",
@@ -140,6 +159,11 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.monitor_heart,
                         color: Colors.deepPurple,
                         time: ble.hrvTime,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const ManualHrvScreen()),
+                        ),
                       ),
                       _MetricCard(
                         title: "Steps",
@@ -158,14 +182,26 @@ class DashboardScreen extends StatelessWidget {
                   SizedBox(
                     height: 50,
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        ble.syncAllData();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Syncing all data...")));
-                      },
-                      icon: const Icon(Icons.sync),
-                      label: const Text("SYNC ALL DATA"),
+                      onPressed: ble.isSyncing
+                          ? null
+                          : () {
+                              ble.syncAllData();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text("Syncing all data...")));
+                            },
+                      icon: ble.isSyncing
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.sync),
+                      label:
+                          Text(ble.isSyncing ? "SYNCING..." : "SYNC ALL DATA"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blueAccent,
                         foregroundColor: Colors.white,
@@ -277,6 +313,7 @@ class _MetricCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String time;
+  final VoidCallback? onTap;
 
   const _MetricCard({
     required this.title,
@@ -285,6 +322,7 @@ class _MetricCard extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.time,
+    this.onTap,
   });
 
   @override
@@ -292,33 +330,37 @@ class _MetricCard extends StatelessWidget {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Icon(icon, color: color),
-                Text(time,
-                    style: const TextStyle(fontSize: 10, color: Colors.grey)),
-              ],
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value,
-                    style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: color)),
-                Text("$title ($unit)",
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
-            )
-          ],
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(icon, color: color),
+                  Text(time,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(value,
+                      style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: color)),
+                  Text("$title ($unit)",
+                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              )
+            ],
+          ),
         ),
       ),
     );

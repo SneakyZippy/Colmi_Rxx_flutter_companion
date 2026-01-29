@@ -159,10 +159,16 @@ class BleService extends ChangeNotifier
   }
 
   // Smart Sync State
+  bool _isSyncing = false;
+  bool get isSyncing => _isSyncing;
+
   DateTime? _lastSyncTime;
   Timer? _periodicSyncTimer;
   final Duration _syncInterval = const Duration(minutes: 60);
   final Duration _minSyncDelay = const Duration(minutes: 15);
+
+  // Auto-Reconnect
+  String? _lastDeviceId;
 
   @override
   void dispose() {
@@ -170,6 +176,7 @@ class BleService extends ChangeNotifier
     _periodicSyncTimer?.cancel();
     _accelStreamController.close();
     _ppgStreamController.close();
+    _scanner.removeListener(_checkAutoConnect);
     super.dispose();
   }
 
@@ -192,6 +199,66 @@ class BleService extends ChangeNotifier
     }
     // Load bonded devices
     await _scanner.loadBondedDevices();
+
+    // Load last device ID for auto-reconnect
+    await _loadLastDeviceId();
+
+    // Listen for scan results using the combined check
+    _scanner.addListener(_checkAutoConnect);
+
+    // Attempt immediate connection if device is already bonded
+    _checkAutoConnect();
+  }
+
+  Future<void> _loadLastDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _lastDeviceId = prefs.getString('last_device_id');
+    if (_lastDeviceId != null) {
+      debugPrint("Loaded Last Device ID: $_lastDeviceId");
+    }
+  }
+
+  Future<void> _saveLastDeviceId(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_device_id', id);
+    _lastDeviceId = id;
+    debugPrint("Saved Last Device ID: $id");
+  }
+
+  void _checkAutoConnect() {
+    // If already connected or connecting, or no last device, ignore
+    if (isConnected ||
+        _status.startsWith("Connecting") ||
+        _lastDeviceId == null) {
+      return;
+    }
+
+    BluetoothDevice? target;
+
+    // 1. Check Bonded Devices (Fastest, no scan needed)
+    try {
+      target = _scanner.bondedDevices.firstWhere(
+        (d) => d.remoteId.str == _lastDeviceId,
+      );
+      debugPrint("Auto-Connect: Found in Bonded Devices");
+    } catch (_) {}
+
+    // 2. Check Scan Results
+    if (target == null) {
+      try {
+        final match = _scanner.scanResults.firstWhere(
+          (r) => r.device.remoteId.str == _lastDeviceId,
+        );
+        target = match.device;
+        debugPrint("Auto-Connect: Found in Scan Results");
+        stopScan();
+      } catch (_) {}
+    }
+
+    if (target != null) {
+      debugPrint("Triggering Auto-Connect to: ${target.remoteId.str}");
+      connectToDevice(target);
+    }
   }
 
   Future<void> connectToDevice(BluetoothDevice device) async {
@@ -241,6 +308,10 @@ class BleService extends ChangeNotifier
       await syncSettingsToRing();
 
       _status = "Connected to ${device.platformName}";
+
+      // Save as last device for auto-reconnect
+      await _saveLastDeviceId(device.remoteId.str);
+
       notifyListeners();
 
       _startPeriodicSyncTimer();
@@ -712,20 +783,29 @@ class BleService extends ChangeNotifier
 
   Future<void> startFullSyncSequence() async {
     if (_writeChar == null) return;
-    final now = DateTime.now();
-    final difference = now.difference(_selectedDate).inDays;
-    int offset = difference < 0 ? 0 : difference;
 
-    await _writeChar!.write(PacketFactory.getStepsPacket(dayOffset: offset));
-    await Future.delayed(const Duration(seconds: 2));
-    await syncHeartRateHistory();
-    await Future.delayed(const Duration(seconds: 2));
-    await syncSpo2History();
-    await Future.delayed(const Duration(seconds: 4));
-    await syncStressHistory();
-    await Future.delayed(const Duration(seconds: 2));
-    await syncHrvHistory();
-    _logger.setLastLog("Full Sync Completed");
+    _isSyncing = true;
+    notifyListeners();
+
+    try {
+      final now = DateTime.now();
+      final difference = now.difference(_selectedDate).inDays;
+      int offset = difference < 0 ? 0 : difference;
+
+      await _writeChar!.write(PacketFactory.getStepsPacket(dayOffset: offset));
+      await Future.delayed(const Duration(seconds: 2));
+      await syncHeartRateHistory();
+      await Future.delayed(const Duration(seconds: 2));
+      await syncSpo2History();
+      await Future.delayed(const Duration(seconds: 4));
+      await syncStressHistory();
+      await Future.delayed(const Duration(seconds: 2));
+      await syncHrvHistory();
+      _logger.setLastLog("Full Sync Completed");
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
   }
 
   Future<void> syncStepsHistory() async {
