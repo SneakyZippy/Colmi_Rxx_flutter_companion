@@ -59,7 +59,8 @@ class BleDataProcessor {
     // --- BIG DATA REASSEMBLY ---
     if (_isReceivingBigData) {
       _bigDataBuffer.addAll(data);
-      // callbacks.onProtocolLog("Buffering Big Data... ${_bigDataBuffer.length}/$_bigDataExpectedLen");
+      callbacks.onProtocolLog(
+          "Buffering Big Data... ${_bigDataBuffer.length}/$_bigDataExpectedLen");
 
       if (_bigDataBuffer.length >= _bigDataExpectedLen) {
         List<int> fullPacket = List.from(_bigDataBuffer);
@@ -79,6 +80,8 @@ class BleDataProcessor {
 
       if (data.length < totalExpected) {
         // Start buffering
+        callbacks.onProtocolLog(
+            "Start Buffering Big Data (0xBC): Need $totalExpected bytes");
         _isReceivingBigData = true;
         _bigDataExpectedLen = totalExpected;
         _bigDataBuffer = List.from(data);
@@ -408,21 +411,15 @@ class BleDataProcessor {
         // [DaysAgo] [DayBytes] [StartMins L] [StartMins H] [EndMins L] [EndMins H] [Stages...]
         if (index + 6 > data.length) break;
 
+        final int startOfChunk = index;
         int daysAgo = data[index];
-        int dayBytes =
-            data[index + 1]; // Total bytes for this day INCLUDING headers?
-        // GB: int dayBytes = value[index]; -> "for(j=4; j<dayBytes; j+=2)" implies dayBytes is length of subsequent data?
-        // Wait, GB says:
-        // int daysAgo = value[index]; index++;
-        // int dayBytes = value[index]; index++;
-        // int sleepStart = ...; index+=2;
-        // int sleepEnd = ...; index+=2;
-        // loop j=4; j<dayBytes
-        // IF j starts at 4, and we have read 4 bytes (start/end), then dayBytes INCLUDES expected 4 bytes.
-        // So day payload (stages) length is dayBytes - 4.
+        int dayBytes = data[index + 1];
 
-        int sleepStartMins = data[index + 2] | (data[index + 3] << 8);
-        int sleepEndMins = data[index + 4] | (data[index + 5] << 8);
+        // Python: sleepStart = int.from_bytes(..., signed=True)
+        int sleepStartMins =
+            (data[index + 2] | (data[index + 3] << 8)).toSigned(16);
+        int sleepEndMins =
+            (data[index + 4] | (data[index + 5] << 8)).toSigned(16);
 
         DateTime now = DateTime.now();
         // Calculate session start date
@@ -435,8 +432,6 @@ class BleDataProcessor {
 
         if (sleepStartMins > sleepEndMins) {
           // Wrapped around midnight (Start 23:00, End 07:00)
-          // If daysAgo applies to "End Time" (WakeUp), then Start is daysAgo-1?
-          // GB logic: "if (sleepStart > sleepEnd) sessionStart.add(Calendar.DAY_OF_MONTH, -1);"
           sessionStart = sessionStart.subtract(const Duration(days: 1));
         }
 
@@ -446,9 +441,6 @@ class BleDataProcessor {
         // Parse Stages
         int stageDataStart = index + 6;
         int stagesLength = dayBytes - 4; // Headers (Start/End) are 4 bytes
-        // GB loop: j=4 to dayBytes. index is current cursor.
-        // It reads value[index] (Stage) and value[index+1] (Duration).
-        // Each step increases index by 2.
 
         DateTime stageTime = sessionStart;
 
@@ -471,14 +463,10 @@ class BleDataProcessor {
         }
 
         // Advance main index
-        // GB: index += 6 for header, then + (dayBytes - 4) for stages.
-        // Total advance = 6 + dayBytes - 4 = 2 + dayBytes?
-        // Wait, GB: "index = 7".
-        // Loop: daysAgo(1) + dayBytes(1) + Start(2) + End(2) = 6 bytes.
-        // Then loops stages.
-        // So total bytes consumed = 6 + (dayBytes - 4).
-        // Correct.
-        index += 2 + dayBytes;
+        // Structure: [DaysAgo:1][DayBytes:1][Start:2][End:2][Data: dayBytes-4]
+        // data[index+1] is dayBytes.
+        // Total chunk size = 1 (DaysAgo) + 1 (DayBytes) + dayBytes.
+        index = startOfChunk + 2 + dayBytes;
       }
     } else if (sub == BleConstants.subBigDataEnd) {
       // End

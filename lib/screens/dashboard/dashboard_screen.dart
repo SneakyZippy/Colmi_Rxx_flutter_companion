@@ -173,6 +173,22 @@ class DashboardScreen extends StatelessWidget {
                         color: Colors.orange,
                         time: ble.stepsTime,
                       ),
+                      _MetricCard(
+                        title: "Sleep",
+                        value: ble.totalSleepTimeFormatted,
+                        unit: "Duration",
+                        icon: Icons.bedtime,
+                        color: Colors.indigo,
+                        time: "Last Sync", // Or better label?
+                        onTap: () {
+                          // Optional: Navigate to Sleep details screen if exists
+                          // For now, just a snackbar or no-op
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      "Sleep Details not implemented yet")));
+                        },
+                      ),
                     ],
                   ),
 
@@ -291,6 +307,16 @@ class DashboardScreen extends StatelessWidget {
                 ble.syncHrvHistory();
                 ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text("Syncing HRV...")));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.bedtime, color: Colors.indigo),
+              title: const Text("Sleep"),
+              onTap: () {
+                Navigator.pop(ctx);
+                ble.syncSleepHistory();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Syncing Sleep...")));
               },
             ),
           ],

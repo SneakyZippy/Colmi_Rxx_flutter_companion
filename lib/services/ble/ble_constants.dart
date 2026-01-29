@@ -6,6 +6,7 @@ class BleConstants {
 
   static const String serviceUuidV2 = "de5bf728-d711-4e47-af26-65e3012a5dc7";
   static const String notifyCharUuidV2 = "de5bf729-d711-4e47-af26-65e3012a5dc7";
+  static const String writeCharUuidV2 = "de5bf72a-d711-4e47-af26-65e3012a5dc7";
 
   // Device Filters
   static const List<String> targetDeviceNames = [

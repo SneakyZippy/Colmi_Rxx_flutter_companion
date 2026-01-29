@@ -145,10 +145,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         child: SleepGraph(data: ble.sleepHistory),
                       ),
                     ),
-                    ElevatedButton(
-                      onPressed: () => ble.syncSleepHistory(),
-                      child: const Text("Sync Sleep Data"),
-                    ),
+                    if (ble.sleepHistory.isEmpty)
+                      ElevatedButton(
+                        onPressed: () => ble.syncSleepHistory(),
+                        child: const Text("Sync Sleep Data"),
+                      ),
                     const SizedBox(height: 16),
                   ],
                 ),

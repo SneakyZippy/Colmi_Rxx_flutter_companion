@@ -83,10 +83,10 @@ class PacketFactory {
   /// 0xBC 27 Big Data Request (Sleep)
   /// Standard format: 16 bytes padded. Key 0x01.
   static Uint8List createSleepRequestPacket() {
-    // 0xBC 27 01 00 FF 00 FF (Padded to 16)
+    // 0xBC 27 00 00 FF FF (BigData Sleep Request)
+    // Python: [39, 0, 0, 255, 255] -> cmd 188 (0xBC)
     return createPacket(
-        command: BleConstants.cmdBigData,
-        data: [0x27, 0x01, 0x00, 0xFF, 0x00, 0xFF]);
+        command: BleConstants.cmdBigData, data: [0x27, 0x00, 0x00, 0xFF, 0xFF]);
   }
 
   /// 0x43 Realtime Data Config Packet

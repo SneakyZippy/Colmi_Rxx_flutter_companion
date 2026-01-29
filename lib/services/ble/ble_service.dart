@@ -70,6 +70,7 @@ class BleService extends ChangeNotifier
   // --- Connection State ---
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _writeChar;
+  BluetoothCharacteristic? _writeCharV2;
   BluetoothCharacteristic? _notifyChar;
   BluetoothCharacteristic? _notifyCharV2;
 
@@ -126,6 +127,21 @@ class BleService extends ChangeNotifier
   List<Point> get stepsHistory => List.unmodifiable(_stepsHistory);
   List<SleepData> get sleepHistory => List.unmodifiable(_sleepHistory);
 
+  // Computed Sleep Data
+  int get totalSleepMinutes => _sleepHistory.fold(0, (sum, item) {
+        // Exclude 'Awake' (Stage 5) from total sleep time?
+        // Usually Total Sleep = Light + Deep. Awake is excluded.
+        // Stage 5 = Awake.
+        return (item.stage != 5) ? sum + item.durationMinutes : sum;
+      });
+
+  String get totalSleepTimeFormatted {
+    if (totalSleepMinutes == 0) return "0h 0m";
+    int hours = totalSleepMinutes ~/ 60;
+    int minutes = totalSleepMinutes % 60;
+    return "${hours}h ${minutes}m";
+  }
+
   // Raw Streams
   final StreamController<List<int>> _accelStreamController =
       StreamController<List<int>>.broadcast();
@@ -154,7 +170,20 @@ class BleService extends ChangeNotifier
   DateTime get selectedDate => _selectedDate;
 
   void setSelectedDate(DateTime date) {
+    if (date == _selectedDate) return;
     _selectedDate = date;
+
+    // Clear history for the new view
+    _hrHistory.clear();
+    _spo2History.clear();
+    _stressHistory.clear();
+    _hrvHistory.clear();
+    _stepsHistory.clear();
+    _sleepHistory.clear();
+
+    // Optional: Reset aggregates if they track the selected day
+    _steps = 0;
+
     notifyListeners();
   }
 
@@ -326,6 +355,7 @@ class BleService extends ChangeNotifier
   Future<void> _discoverServices(BluetoothDevice device) async {
     List<BluetoothService> services = await device.discoverServices();
     _writeChar = null;
+    _writeCharV2 = null;
     _notifyChar = null;
     _notifyCharV2 = null;
 
@@ -354,9 +384,12 @@ class BleService extends ChangeNotifier
             BleConstants.serviceUuidV2.toLowerCase(),
       );
       for (var c in serviceV2.characteristics) {
-        if (c.uuid.toString().toLowerCase() ==
-            BleConstants.notifyCharUuidV2.toLowerCase()) {
+        String uuid = c.uuid.toString().toLowerCase();
+        if (uuid == BleConstants.notifyCharUuidV2.toLowerCase()) {
           _notifyCharV2 = c;
+        }
+        if (uuid == BleConstants.writeCharUuidV2.toLowerCase()) {
+          _writeCharV2 = c;
         }
       }
     } catch (e) {
@@ -583,6 +616,13 @@ class BleService extends ChangeNotifier
 
   @override
   void onHrvHistoryPoint(DateTime timestamp, int val) {
+    if (val > 0) {
+      if (_lastHrvTime == null || timestamp.isAfter(_lastHrvTime!)) {
+        _hrv = val;
+        _lastHrvTime = timestamp;
+      }
+    }
+
     bool exists = _hrvHistory.any((p) {
       int minutes = timestamp.hour * 60 + timestamp.minute;
       return p.x == minutes && p.y == val;
@@ -598,13 +638,22 @@ class BleService extends ChangeNotifier
   @override
   void onSleepHistoryPoint(DateTime timestamp, int sleepStage,
       {int durationMinutes = 0}) {
-    _sleepHistory.add(SleepData(
-      timestamp: timestamp,
-      stage: sleepStage,
-      durationMinutes: durationMinutes,
-    ));
-    _sleepHistory.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    notifyListeners();
+    // Remove existing entry with same timestamp to avoid duplicates
+    _sleepHistory.removeWhere((item) => item.timestamp == timestamp);
+
+    bool isSameDay = timestamp.year == _selectedDate.year &&
+        timestamp.month == _selectedDate.month &&
+        timestamp.day == _selectedDate.day;
+
+    if (isSameDay) {
+      _sleepHistory.add(SleepData(
+        timestamp: timestamp,
+        stage: sleepStage,
+        durationMinutes: durationMinutes,
+      ));
+      _sleepHistory.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      notifyListeners();
+    }
   }
 
   @override
@@ -801,6 +850,8 @@ class BleService extends ChangeNotifier
       await syncStressHistory();
       await Future.delayed(const Duration(seconds: 2));
       await syncHrvHistory();
+      await Future.delayed(const Duration(seconds: 2));
+      await syncSleepHistory();
       _logger.setLastLog("Full Sync Completed");
     } finally {
       _isSyncing = false;
@@ -873,8 +924,15 @@ class BleService extends ChangeNotifier
     // Variants 4-9
     // Using Variant 4 (Standard Gadgetbridge Format: 16-byte)
     debugPrint('Step 6: Requesting Sleep Data (0xBC 27)');
-    await _writeChar!.write(
-        PacketFactory.createSleepRequestPacket()); // withoutResponse: true?
+
+    if (_writeCharV2 != null) {
+      debugPrint('Using V2 Write Characteristic for Sleep Request');
+      await _writeCharV2!.write(PacketFactory.createSleepRequestPacket());
+    } else {
+      debugPrint(
+          'Using Default Write Characteristic (Fallback) for Sleep Request');
+      await _writeChar!.write(PacketFactory.createSleepRequestPacket());
+    }
     await Future.delayed(const Duration(milliseconds: 1000));
 
     // 7. Legacy 0x7A (Packet 0) as fallback
