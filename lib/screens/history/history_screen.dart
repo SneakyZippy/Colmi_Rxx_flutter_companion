@@ -48,6 +48,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           actions: [
             IconButton(
+              icon: const Icon(Icons.cloud_download),
+              tooltip: "Download Day's Data",
+              onPressed: () async {
+                final ble = Provider.of<BleService>(context, listen: false);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text("Downloading data from cloud...")));
+                await ble.downloadFromCloud();
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Download finished.")));
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.list),
               onPressed: () {
                 Navigator.push(

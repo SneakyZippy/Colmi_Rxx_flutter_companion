@@ -241,6 +241,35 @@ class DashboardScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: ble.isSyncing
+                          ? null
+                          : () async {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content:
+                                          Text("Uploading data to cloud...")));
+                              await ble.syncToCloud();
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            "Cloud upload finished (check logs)")));
+                              }
+                            },
+                      icon: const Icon(Icons.cloud_upload),
+                      label: const Text("SYNC TO CLOUD (10.25.6.11)"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.purple,
+                        side: const BorderSide(color: Colors.purple),
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
