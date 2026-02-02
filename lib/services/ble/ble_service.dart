@@ -15,6 +15,7 @@ import 'package:flutter_application_1/models/sleep_data.dart';
 import 'ble_logger.dart';
 import 'ble_scanner.dart';
 import 'ble_sensor_controller.dart';
+import 'package:flutter_application_1/services/api/api_service.dart';
 
 import 'package:flutter/widgets.dart'; // For WidgetsBindingObserver
 
@@ -43,6 +44,8 @@ class BleService extends ChangeNotifier
   late final BleLogger _logger;
   late final BleScanner _scanner;
   late final BleSensorController _sensorController;
+  final ApiService _apiService = ApiService();
+  ApiService get apiService => _apiService;
 
   // --- Exposed Sub-Components (Facade) ---
   // Logger
@@ -82,6 +85,7 @@ class BleService extends ChangeNotifier
   String get status => _status;
 
   bool get isConnected => _connectedDevice != null && _writeChar != null;
+  String? get currentDeviceId => _connectedDevice?.remoteId.toString();
 
   // --- Measurement Data State (Kept in Service for UI) ---
   int _batteryLevel = 0;
@@ -789,6 +793,217 @@ class BleService extends ChangeNotifier
   void _stopPeriodicSyncTimer() {
     _periodicSyncTimer?.cancel();
     _periodicSyncTimer = null;
+  }
+
+  Future<void> downloadFromCloud() async {
+    if (_lastDeviceId == null) {
+      debugPrint("No Last Device ID to fetch for.");
+      return;
+    }
+    _isSyncing = true;
+    notifyListeners();
+    try {
+      debugPrint("Downloading from Cloud for $_selectedDate...");
+      final date = _selectedDate;
+
+      // 1. Heart Rate
+      final hrList = await _apiService.getHeartRate(_lastDeviceId!, date);
+      _hrHistory.clear();
+      for (var item in hrList) {
+        final dt = DateTime.parse(item['recorded_at']);
+        final val = item['bpm'] as int;
+        if (dt.year == date.year &&
+            dt.month == date.month &&
+            dt.day == date.day) {
+          int minutes = dt.hour * 60 + dt.minute;
+          _hrHistory.add(Point(minutes, val));
+        }
+      }
+
+      // 2. SpO2
+      final spo2List = await _apiService.getSpo2(_lastDeviceId!, date);
+      _spo2History.clear();
+      for (var item in spo2List) {
+        final dt = DateTime.parse(item['recorded_at']);
+        final val = item['spo2_percent'] as int;
+        if (dt.year == date.year &&
+            dt.month == date.month &&
+            dt.day == date.day) {
+          int minutes = dt.hour * 60 + dt.minute;
+          _spo2History.add(Point(minutes, val));
+        }
+      }
+
+      // 3. Stress
+      final stressList = await _apiService.getStress(_lastDeviceId!, date);
+      _stressHistory.clear();
+      for (var item in stressList) {
+        final dt = DateTime.parse(item['recorded_at']);
+        final val = item['stress_level'] as int;
+        if (dt.year == date.year &&
+            dt.month == date.month &&
+            dt.day == date.day) {
+          int minutes = dt.hour * 60 + dt.minute;
+          _stressHistory.add(Point(minutes, val));
+        }
+      }
+
+      // 4. HRV
+      final hrvList = await _apiService.getHrv(_lastDeviceId!, date);
+      _hrvHistory.clear();
+      for (var item in hrvList) {
+        final dt = DateTime.parse(item['recorded_at']);
+        final val = item['hrv_val'] as int;
+        if (dt.year == date.year &&
+            dt.month == date.month &&
+            dt.day == date.day) {
+          int minutes = dt.hour * 60 + dt.minute;
+          _hrvHistory.add(Point(minutes, val));
+        }
+      }
+
+      // 5. Steps
+      final stepsList = await _apiService.getSteps(_lastDeviceId!, date);
+      _stepsHistory.clear();
+      // Steps usually by quarter. Reverse mapping?
+      // Point(quarterIndex, steps).
+      // recorded_at is just timestamp.
+      // We'll trust the time.
+      for (var item in stepsList) {
+        final dt = DateTime.parse(item['recorded_at']);
+        final val = item['steps'] as int;
+        if (dt.year == date.year &&
+            dt.month == date.month &&
+            dt.day == date.day) {
+          // Approximate quarter index
+          int minutes = dt.hour * 60 + dt.minute;
+          int quarter = minutes ~/ 15;
+          _stepsHistory.add(Point(quarter, val));
+        }
+      }
+      if (_stepsHistory.isNotEmpty) {
+        _steps = _stepsHistory.fold<int>(0, (sum, p) => sum + p.y.toInt());
+      } else {
+        _steps = 0;
+      }
+
+      // 6. Sleep
+      final sleepList = await _apiService.getSleep(_lastDeviceId!, date);
+      _sleepHistory.clear();
+      for (var item in sleepList) {
+        final dt = DateTime.parse(item['recorded_at']);
+        final stage = item['sleep_stage'] as int;
+        final minutes = item['duration_minutes'] as int;
+        // Don't strict filter by date for sleep? Sometimes sleep crosses midnight.
+        // Keeping it strictly to what server returned for "date" query.
+        _sleepHistory.add(
+            SleepData(timestamp: dt, stage: stage, durationMinutes: minutes));
+      }
+      _sleepHistory.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      debugPrint("Download Complete. Updated Histories.");
+      _logger.setLastLog("Cloud DL Success");
+    } catch (e) {
+      debugPrint("Download Failed: $e");
+      _logger.setLastLog("Cloud DL Err: $e");
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> syncToCloud() async {
+    _isSyncing = true;
+    notifyListeners();
+    try {
+      debugPrint("Starting Cloud Sync...");
+
+      // 1. Heart Rate
+      final hrData = _hrHistory.map((p) {
+        final time = DateTime(_selectedDate.year, _selectedDate.month,
+            _selectedDate.day, p.x ~/ 60, p.x.toInt() % 60);
+        return {
+          "recorded_at": time.toIso8601String(),
+          "bpm": p.y.toInt(),
+          "device_id": _lastDeviceId ?? "unknown" // Add device ID for server
+        };
+      }).toList();
+      await _apiService.saveHeartRate(hrData);
+
+      // 2. SpO2
+      final spo2Data = _spo2History.map((p) {
+        final time = DateTime(_selectedDate.year, _selectedDate.month,
+            _selectedDate.day, p.x ~/ 60, p.x.toInt() % 60);
+        return {
+          "recorded_at": time.toIso8601String(),
+          "spo2_percent": p.y.toInt(),
+          "device_id": _lastDeviceId ?? "unknown"
+        };
+      }).toList();
+      await _apiService.saveSpo2(spo2Data);
+
+      // 3. Stress
+      final stressData = _stressHistory.map((p) {
+        final time = DateTime(_selectedDate.year, _selectedDate.month,
+            _selectedDate.day, p.x ~/ 60, p.x.toInt() % 60);
+        return {
+          "recorded_at": time.toIso8601String(),
+          "stress_level": p.y.toInt(),
+          "device_id": _lastDeviceId ?? "unknown"
+        };
+      }).toList();
+      await _apiService.saveStress(stressData);
+
+      // 4. HRV
+      final hrvData = _hrvHistory.map((p) {
+        final time = DateTime(_selectedDate.year, _selectedDate.month,
+            _selectedDate.day, p.x ~/ 60, p.x.toInt() % 60);
+        return {
+          "recorded_at": time.toIso8601String(),
+          "hrv_val": p.y.toInt(),
+          "device_id": _lastDeviceId ?? "unknown"
+        };
+      }).toList();
+      await _apiService.saveHrv(hrvData);
+
+      // 5. Steps
+      // Steps history has x=quarterIndex?
+      // onStepsHistoryPoint: _stepsHistory.add(Point(quarterIndex, steps));
+      // Assuming quarterIndex increments from 0 (00:00). Each step is 15 mins?
+      // Standard Colmi/Gadgetbridge logic often uses 15min slots.
+      // 0 = 00:00-00:15
+      final stepsData = _stepsHistory.map((p) {
+        // approximate time
+        int totalMinutes = p.x.toInt() * 15;
+        final time = _selectedDate.add(Duration(minutes: totalMinutes));
+        return {
+          "recorded_at": time.toIso8601String(),
+          "steps": p.y.toInt(),
+          "device_id": _lastDeviceId ?? "unknown"
+        };
+      }).toList();
+      await _apiService.saveSteps(stepsData);
+
+      // 6. Sleep
+      final sleepData = _sleepHistory.map((s) {
+        return {
+          "recorded_at": s.timestamp.toIso8601String(),
+          "sleep_stage": s.stage,
+          "duration_minutes": s.durationMinutes,
+          "device_id": _lastDeviceId ?? "unknown"
+        };
+      }).toList();
+      await _apiService.saveSleep(sleepData);
+
+      _logger.setLastLog("Cloud Sync Success");
+    } catch (e) {
+      debugPrint("Cloud Sync Failed: $e");
+      _logger.setLastLog("Cloud Err: $e");
+      // Don't rethrow to avoid crashing UI, just log
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
   }
 
   // --- Misc Commands ---

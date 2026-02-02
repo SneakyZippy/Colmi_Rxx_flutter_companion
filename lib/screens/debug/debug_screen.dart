@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_application_1/services/ble/ble_service.dart';
 import 'command_tester_screen.dart';
+import 'api_log_screen.dart';
 
 class DebugScreen extends StatelessWidget {
   const DebugScreen({super.key});
@@ -52,6 +53,21 @@ class DebugScreen extends StatelessWidget {
                 icon: const Icon(Icons.terminal),
                 label: const Text("Open Command Tester / Hex Log"),
               ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const ApiLogScreen()),
+                  );
+                },
+                icon: const Icon(Icons.cloud_sync),
+                label: const Text("Open Server Logs"),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromARGB(255, 1, 0, 87),
+                    foregroundColor: Colors.white),
+              ),
               const SizedBox(height: 20),
               const Text("Live Log (Last Packet)",
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -81,8 +97,7 @@ class DebugScreen extends StatelessWidget {
               if (ble.isConnected)
                 ListTile(
                   title: const Text("Device ID"),
-                  subtitle: Text(
-                      ble.lastLog), // TODO: Expose device ID properly if needed
+                  subtitle: Text(ble.currentDeviceId ?? "Unknown"),
                 ),
             ],
           );
