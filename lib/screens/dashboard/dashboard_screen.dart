@@ -247,19 +247,8 @@ class DashboardScreen extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: ble.isSyncing
                           ? null
-                          : () async {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                          Text("Uploading data to cloud...")));
-                              await ble.syncToCloud();
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            "Cloud upload finished (check logs)")));
-                              }
-                            },
+                          : () =>
+                              _showCloudSyncConfirmationDialog(context, ble),
                       icon: const Icon(Icons.cloud_upload),
                       label: const Text("SYNC TO CLOUD (10.25.6.11)"),
                       style: OutlinedButton.styleFrom(
@@ -275,6 +264,36 @@ class DashboardScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _showCloudSyncConfirmationDialog(BuildContext context, BleService ble) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Network"),
+        content: const Text(
+            "Are you sure you are in the correct network to sync to the cloud?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // Close dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Uploading data to cloud...")));
+              await ble.syncToCloud();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text("Cloud upload finished (check logs)")));
+              }
+            },
+            child: const Text("Sync"),
+          ),
+        ],
       ),
     );
   }

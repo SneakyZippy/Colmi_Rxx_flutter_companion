@@ -126,7 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ListTile(
             title: const Text("Find Ring"),
-            subtitle: const Text("Make the ring vibrate."),
+            subtitle: const Text("Flash the ring."),
             leading: const Icon(Icons.vibration),
             onTap: () async {
               ScaffoldMessenger.of(context).showSnackBar(

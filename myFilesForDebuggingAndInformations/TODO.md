@@ -1,6 +1,10 @@
 # 🗺️ Project Roadmap & TODOs
 
 
+
+
+
+
 Build APK
 flutter build apk --debug
 flutter build apk --release
@@ -24,7 +28,7 @@ flutter build apk --release
 ## 🚨 High Priority (Critical)
 - [x] **Data Reset Bug:** Fix issue where Steps and HR data resets incorrectly after midnight (00:00) or when staying up late.
 - [x] **History Sync:** Implemented parsers for Stress (`0x37`), SpO2 (`0xBC`), and Steps (`0x43`).
-- [ ] **Local Database:** Set up `hive` or `sqflite` to persist downloaded data so it remains available after closing the app.
+- [ ] **Local Database:** Set up `hive` or `sqflite` to persist downloaded data so it remains available after closing the app. (server)
 - [x] **SpO2 Monitoring:** Basic measurement and history sync implemented.
 
 ## 🟠 Medium Priority
@@ -32,13 +36,15 @@ flutter build apk --release
 - [x] **Settings Page:** Dedicated screen created with "Auto Monitoring" and "Paired Devices".
 - [ ] **Auto-Reconnect:** Add logic to attempt reconnection if the ring disconnects unexpectedly (e.g., out of range).
 - [ ] **Bluetooth State:** Show a "Please turn on Bluetooth" prompt if the phone's adapter is disabled.
+- [x] get a notification that you should only sync when in fh network!
+
 
 ## 🟢 Low Priority (Features & UI)
 - [ ] **Step Goal:** Send packet to update the "Daily Step Goal" so the ring's progress circle matches the app.
 - [ ] **User Profile:** Send height/weight/age packets (`0x0A` command implemented).
 - [ ] **Splash Screen:** Add a branded launch screen for a professional look.
 - [ ] **Error Handling:** Replace crashes or silent failures with friendly "Toast" error messages.
-- [ ] **Find My Ring:** Implement the command to make the ring vibrate/flash.
+- [x] **Find My Ring:** Implement the command to make the ring flash.
 
 ## 🛠️ Code Quality & Maintenance
 - [x] **Refactor BleService:** Added specific timeout safety timers for all sensor commands.
@@ -51,7 +57,7 @@ flutter build apk --release
 - [ ] **Delete Stats function:** A way to delete stats for better debugging.
 - [x] **Zoom Graph** Allow zooming in and out of the graph
 - [x] **Graphs** Fix graphs
-- [ ] **spO2** Add spO2 to the graphs
+- [x] **spO2** Add spO2 to the graphs
 - [x] **Graphs** When switching to a graph it should only show timeframe from where the data is viable
 
 

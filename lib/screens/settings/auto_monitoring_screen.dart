@@ -16,7 +16,7 @@ class AutoMonitoringScreen extends StatelessWidget {
           _buildHrSettings(bleService),
           const Divider(),
           SwitchListTile(
-            title: const Text("SpO2 Monitoring"),
+            title: const Text("SpO2 Monitoring (not working)"),
             subtitle: const Text("Automatically measures SpO2 periodically."),
             value: bleService.spo2AutoEnabled,
             onChanged: (bool value) {
@@ -34,7 +34,7 @@ class AutoMonitoringScreen extends StatelessWidget {
           ),
           const Divider(),
           SwitchListTile(
-            title: const Text("HRV Monitoring (Experimental)"),
+            title: const Text("HRV Monitoring"),
             subtitle: const Text("Enables Scheduled HRV (0x38)."),
             value: bleService.hrvAutoEnabled,
             onChanged: (bool value) {

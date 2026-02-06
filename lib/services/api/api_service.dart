@@ -23,27 +23,29 @@ class ApiService extends ChangeNotifier {
   }
 
   Future<void> saveHeartRate(List<Map<String, dynamic>> data) async {
-    await _sendData('/heart_rate_logs', data);
+    await _sendData('/heart_rate_logs', data,
+        conflictKeys: 'device_id,recorded_at');
   }
 
   Future<void> saveSpo2(List<Map<String, dynamic>> data) async {
-    await _sendData('/spo2_logs', data);
+    await _sendData('/spo2_logs', data, conflictKeys: 'device_id,recorded_at');
   }
 
   Future<void> saveSleep(List<Map<String, dynamic>> data) async {
-    await _sendData('/sleep_logs', data);
+    await _sendData('/sleep_logs', data, conflictKeys: 'device_id,recorded_at');
   }
 
   Future<void> saveSteps(List<Map<String, dynamic>> data) async {
-    await _sendData('/steps_logs', data);
+    await _sendData('/steps_logs', data, conflictKeys: 'device_id,recorded_at');
   }
 
   Future<void> saveHrv(List<Map<String, dynamic>> data) async {
-    await _sendData('/hrv_logs', data);
+    await _sendData('/hrv_logs', data, conflictKeys: 'device_id,recorded_at');
   }
 
   Future<void> saveStress(List<Map<String, dynamic>> data) async {
-    await _sendData('/stress_logs', data);
+    await _sendData('/stress_logs', data,
+        conflictKeys: 'device_id,recorded_at');
   }
 
   // --- Retrieval Methods ---
@@ -102,14 +104,18 @@ class ApiService extends ChangeNotifier {
     }
   }
 
-  Future<void> _sendData(
-      String endpoint, List<Map<String, dynamic>> data) async {
+  Future<void> _sendData(String endpoint, List<Map<String, dynamic>> data,
+      {String? conflictKeys}) async {
     if (data.isEmpty) return;
     _log("SYNC: Sending ${data.length} items to $endpoint...");
 
     try {
+      String url = '$_baseUrl$endpoint';
+      if (conflictKeys != null) {
+        url += '?on_conflict=$conflictKeys';
+      }
       final response = await http.post(
-        Uri.parse('$_baseUrl$endpoint'),
+        Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Prefer': 'resolution=ignore-duplicates',
