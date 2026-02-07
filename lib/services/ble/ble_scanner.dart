@@ -16,9 +16,10 @@ class BleScanner extends ChangeNotifier {
   Future<void> loadBondedDevices() async {
     try {
       final devices = await FlutterBluePlus.bondedDevices;
+      // Filter bonded devices to only those matching our target names (Colmi, R02, etc.)
       _bondedDevices = devices.where((d) {
         String name = d.platformName;
-        // Check platform name or advertisement name if cached
+        // Check platform name against our whitelist in BleConstants
         return BleConstants.targetDeviceNames
             .any((target) => name.contains(target));
       }).toList();
@@ -48,6 +49,7 @@ class BleScanner extends ChangeNotifier {
         _scanResults = results.where((r) {
           String name = r.device.platformName;
           if (name.isEmpty) name = r.advertisementData.advName;
+          // Filter by name to avoid showing random BLE devices nearby
           return BleConstants.targetDeviceNames
               .any((target) => name.contains(target));
         }).toList();

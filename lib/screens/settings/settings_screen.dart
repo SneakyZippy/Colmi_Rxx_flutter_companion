@@ -14,7 +14,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    // Fetch latest settings from ring on open
+    // Fetch latest settings from ring on open to ensure UI matches device state.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<BleService>(context, listen: false).readAutoSettings();
     });
@@ -47,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.timer),
             trailing: const Icon(Icons.arrow_forward_ios),
             onTap: () {
+              // Navigate to detailed auto-monitoring configuration
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -92,6 +93,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text("Resets ring to factory defaults (FF 66 66)."),
             leading: const Icon(Icons.restore),
             onTap: () async {
+              // Critical Action: Requires confirmation dialog to prevent accidental wipes.
               bool confirm = await showDialog(
                       context: context,
                       builder: (c) => AlertDialog(

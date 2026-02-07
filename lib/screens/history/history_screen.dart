@@ -24,6 +24,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               final dateStr =
                   "${ble.selectedDate.year}-${ble.selectedDate.month}-${ble.selectedDate.day}";
               return GestureDetector(
+                // Date Picker Interaction
+                // Allows user to pick a past date to view historical data.
                 onTap: () async {
                   final DateTime? picked = await showDatePicker(
                     context: context,
@@ -83,13 +85,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ],
           ),
         ),
+        // Consumer rebuilds the TabBarView content when new data arrives in BleService/BleDataManager
         body: Consumer<BleService>(
           builder: (context, ble, child) {
             return TabBarView(
               physics:
                   const NeverScrollableScrollPhysics(), // Disable tab swipe to avoid conflict with zoom
               children: [
-                // Steps
+                // Steps History Tab
                 HistoryChartWidget(
                   data: ble.stepsHistory,
                   metricLabel: "Total Steps: ${ble.steps}",

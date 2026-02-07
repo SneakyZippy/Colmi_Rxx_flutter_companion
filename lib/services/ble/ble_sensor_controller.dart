@@ -10,6 +10,8 @@ class BleSensorController extends ChangeNotifier {
   final BleLogger logger;
 
   BleSensorController({required this.logger, this.sendCommand});
+  // Handles the logic for starting, stopping, and managing timers for specific sensor measurements.
+  // It uses the `PacketFactory` to generate commands and `sendCommand` callback to transmit them.
 
   // --- Heart Rate ---
   bool _isMeasuringHeartRate = false;
@@ -20,6 +22,7 @@ class BleSensorController extends ChangeNotifier {
     if (sendCommand == null) return;
     _isMeasuringHeartRate = true;
     notifyListeners();
+    // 0x69 0x01
     List<int> packet = PacketFactory.startHeartRate();
     final hex =
         packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
@@ -39,6 +42,8 @@ class BleSensorController extends ChangeNotifier {
     await sendCommand!(packet);
   }
 
+  // Auto-stop logic:
+  // If we don't receive data for 3 seconds, we assume the ring stopped or connection failed.
   void onHeartRateReceived(int bpm) {
     if (_isMeasuringHeartRate) {
       _hrDataTimer?.cancel();

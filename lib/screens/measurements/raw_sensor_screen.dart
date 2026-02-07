@@ -59,8 +59,16 @@ class _RawSensorScreenState extends State<RawSensorScreen> {
         int idx = 2;
 
         // Parse 12-bit signed values
+        // Data format: [High 8 bits] [Low 4 bits | High 4 bits next] ... tricky packing
+        // Actually, the code below assumes:
+        // Byte 1: High 8 bits of Y
+        // Byte 2: Low 4 bits of Y (in high nibble of byte), High 4 bits of Z (in low nibble)?
+        // Wait, the code: ((data[idx] << 4) | (data[idx + 1] & 0xf))
+        // This takes full byte `data[idx]`, shifts left 4 (becoming 12 bits effective space, 8 bits data),
+        // and adds low 4 bits of `data[idx+1]`.
+        // This implies the 12-bit value is split across 1.5 bytes.
         int rawY = ((data[idx] << 4) | (data[idx + 1] & 0xf));
-        if (rawY > 2047) rawY -= 4096;
+        if (rawY > 2047) rawY -= 4096; // Sign extension for 12-bit
 
         int rawZ = ((data[idx + 2] << 4) | (data[idx + 3] & 0xf));
         if (rawZ > 2047) rawZ -= 4096;
@@ -69,10 +77,13 @@ class _RawSensorScreenState extends State<RawSensorScreen> {
         if (rawX > 2047) rawX -= 4096;
 
         // Gesture Logic
+        // Calculate vector magnitude to detect movement intensity
         double normX = rawX.toDouble();
         double normY = rawY.toDouble();
         double normZ = rawZ.toDouble();
         double magnitude = sqrt(normX * normX + normY * normY + normZ * normZ);
+
+        // Normalize against gravity (~512 units = 1G based on observation)
         double gForce = (magnitude / 512.0 - 1.0).abs();
 
         String status = _gestureStatus;
@@ -114,11 +125,14 @@ class _RawSensorScreenState extends State<RawSensorScreen> {
 
     _ppgSub = _ble.ppgStream.listen((data) {
       if (data.isEmpty) return;
+      // 0xA1: Raw Realtime Data
       if (data[0] == 0xA1) {
         if (data.length < 4) return;
+        // Parse PPG Value (2 bytes)
         int val = (data[2] << 8) | data[3];
         if (mounted) setState(() => _ppgRaw = val);
       } else if (data[0] == 0x69) {
+        // 0x69: Heart Rate Measurement Response (sometimes contains raw data)
         if (data.length >= 8) {
           int val = data[6] | (data[7] << 8);
           if (mounted) setState(() => _ppgRaw = val);

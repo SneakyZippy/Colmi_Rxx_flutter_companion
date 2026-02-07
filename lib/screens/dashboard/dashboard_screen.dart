@@ -13,6 +13,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Ringularity V0.0.5 Dashboard')),
+      // Consumer<BleService> rebuilds this widget tree whenever BleService calls notifyListeners()
       body: Consumer<BleService>(
         builder: (context, ble, child) {
           return SingleChildScrollView(
@@ -21,6 +22,7 @@ class DashboardScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // 1. Connection Header
+                // Displays current connection status and allows connecting/disconnecting
                 Card(
                   color: ble.isConnected ? Colors.green[100] : Colors.red[100],
                   child: ListTile(
@@ -48,6 +50,7 @@ class DashboardScreen extends StatelessWidget {
                 ),
 
                 // Paired Devices
+                // Shows a list of previously paired devices for quick reconnection
                 if (!ble.isConnected && ble.bondedDevices.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   const Text("Paired Devices:",
@@ -75,6 +78,7 @@ class DashboardScreen extends StatelessWidget {
                 ],
 
                 // Scan Results (if not connected)
+                // Shows available devices turned up by the scanner
                 if (!ble.isConnected && ble.scanResults.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   const Text("Devices Found:",
@@ -104,6 +108,7 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 20),
 
                 // 2. Metrics Grid
+                // Displays the latest sensor readings (HR, SpO2, Stress, etc.) in a grid
                 if (ble.isConnected) ...[
                   GridView.count(
                     crossAxisCount: 2,
@@ -194,7 +199,8 @@ class DashboardScreen extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // 4. Main Action
+                  // Main Action Buttons
+                  // "Sync All Data" triggers the main synchronization flow
                   SizedBox(
                     height: 50,
                     child: ElevatedButton.icon(

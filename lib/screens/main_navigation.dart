@@ -36,7 +36,8 @@ class _MainNavigationState extends State<MainNavigation> {
 
   void _handleConnectionChange() {
     final ble = Provider.of<BleService>(context, listen: false);
-    // If we lose connection and are not on the dashboard, kick back to dashboard
+    // Safety Check: If we lose connection and are not on the dashboard, kick back to dashboard.
+    // This prevents users from being stuck on screens that require active connection (like 'Measure').
     if (!ble.isConnected && _selectedIndex != 0) {
       if (mounted) {
         setState(() {
@@ -65,8 +66,9 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    // Pages List (Lazy load or keep alive?)
-    // Keeping it simple with indexed stack or just switching widgets
+    // Pages List
+    // We use an IndexStack-like approach via switching the body widget.
+    // Each page corresponds to an item in the BottomNavigationBar.
     final List<Widget> pages = [
       const DashboardScreen(),
       const MeasurementMenuScreen(),

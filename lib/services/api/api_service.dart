@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 class ApiService extends ChangeNotifier {
   static const String _baseUrl = 'http://10.25.6.11:3000';
 
+  // Logger
+  // Keeps an in-memory log of API requests involved for debugging purposes.
   final List<String> _logs = [];
   List<String> get logs => List.unmodifiable(_logs);
 
@@ -21,6 +23,10 @@ class ApiService extends ChangeNotifier {
     debugPrint(entry);
     notifyListeners();
   }
+
+  // --- Data Upload ---
+  // Methods to post local sensor data to the backend API.
+  // We use the 'Ignore Duplicates' preference to handle re-uploads gracefully.
 
   Future<void> saveHeartRate(List<Map<String, dynamic>> data) async {
     await _sendData('/heart_rate_logs', data,
@@ -49,6 +55,7 @@ class ApiService extends ChangeNotifier {
   }
 
   // --- Retrieval Methods ---
+  // Fetch historical data from the API for a specific device and date.
 
   Future<List<dynamic>> getHeartRate(String deviceId, DateTime date) async {
     return _getData('/heart_rate_logs', deviceId, date);
@@ -74,9 +81,12 @@ class ApiService extends ChangeNotifier {
     return _getData('/stress_logs', deviceId, date);
   }
 
+  // Generic helper to GET data ranges filtering by device_id and date.
   Future<List<dynamic>> _getData(
       String endpoint, String deviceId, DateTime date) async {
+    // Determine the 24-hour window for the request
     final startOfDay = DateTime(date.year, date.month, date.day);
+    // ...
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
     final startStr = startOfDay.toIso8601String();

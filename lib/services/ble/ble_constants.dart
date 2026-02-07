@@ -1,9 +1,14 @@
 class BleConstants {
   // Service UUIDs
+  // Standard Nordic UART Service (NUS) for older/standard rings.
   static const String serviceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
-  static const String writeCharUuid = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
-  static const String notifyCharUuid = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
+  static const String writeCharUuid =
+      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"; // TX
+  static const String notifyCharUuid =
+      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"; // RX
 
+  // V2 Service UUIDs
+  // Used by newer Colmi rings (e.g. R02, R06) for specific big data operations.
   static const String serviceUuidV2 = "de5bf728-d711-4e47-af26-65e3012a5dc7";
   static const String notifyCharUuidV2 = "de5bf729-d711-4e47-af26-65e3012a5dc7";
   static const String writeCharUuidV2 = "de5bf72a-d711-4e47-af26-65e3012a5dc7";
@@ -40,14 +45,14 @@ class BleConstants {
   static const int cmdBind = 0x48;
   static const int cmdGetSleepLog = 0x7A;
 
-  static const int cmdRealTimeMeasure = 0x69; // Start
-  static const int cmdRealTimeStop = 0x6A; // Stop
+  static const int cmdRealTimeMeasure = 0x69; // Start Real-time Data Stream
+  static const int cmdRealTimeStop = 0x6A; // Stop Real-time Data Stream
 
-  static const int cmdNotify = 0x73;
-  static const int cmdActivityControl = 0x77;
+  static const int cmdNotify = 0x73; // Async Notification
+  static const int cmdActivityControl = 0x77; // Sport Mode Control
 
-  static const int cmdRawData = 0xA1;
-  static const int cmdBigData = 0xBC;
+  static const int cmdRawData = 0xA1; // Raw Sensor Stream (Accel/PPG)
+  static const int cmdBigData = 0xBC; // Big Data Transfer (History Sync)
 
   static const int cmdFactoryReset = 0xFF;
 

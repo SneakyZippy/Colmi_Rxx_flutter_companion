@@ -34,16 +34,20 @@ class PacketFactory {
 
   // Helper for HRV Stop
   static Uint8List stopRealTimeHrv() {
-    // 0x6A 0x0A 0x00
+    // 0x6A = Stop Command
+    // 0x0A = HRV Data Type (Type 10)
+    // 0x00 = Parameter
     return createPacket(
       command: cmdStopRealTime,
       data: [0x0A, 0x00],
     );
   }
 
-  /// Constructs a 16-byte packet.
-  /// [command] - The command ID.
-  /// [data] - A list of data bytes (will be padded or truncated to fit).
+  /// Constructs a 16-byte packet adhering to the Colmi Ring protocol.
+  /// Structure: [Command Byte] [Data Bytes...] [Checksum]
+  /// The packet is always padded to 16 bytes.
+  /// [command] - The command ID (e.g., 0x69 for Heart Rate).
+  /// [data] - A list of data bytes (will be padded with zeros to fit payload area).
   static Uint8List createPacket({required int command, List<int>? data}) {
     final List<int> packet = List.filled(16, 0);
 
@@ -56,6 +60,7 @@ class PacketFactory {
     }
 
     // Checksum: (Sum of bytes 0-14) & 0xFF
+    // This is a simple additive checksum used by the ring to verify integrity.
     int sum = 0;
     for (int i = 0; i < 15; i++) {
       sum += packet[i];
@@ -73,7 +78,7 @@ class PacketFactory {
   /// Creates sample commands based on user request
   static Uint8List startHeartRate() {
     // 0x6901 - Request Heart Rate (Real-time)
-    // Payload: [0x01] or [0x01, 0x01] commonly used for Start
+    // Payload: [0x01] tells the ring to start streaming HR data.
     return createPacket(
       command: cmdHeartRateMeasurement,
       data: [0x01],
@@ -195,9 +200,9 @@ class PacketFactory {
   /// [date] - usually midnight of the requested day
   static Uint8List getHeartRateLogPacket(DateTime date) {
     // Structure based on colmi_r02_client:
-    // Packet[0] = 0x15
+    // Packet[0] = 0x15 (Command for HR Log)
     // Packet[1-4] = Timestamp (Little Endian)
-    // Packet[5-15] = 0
+    // Packet[5-15] = 0 (Padding)
 
     // Fix: Use UTC components to ignore local timezone offset.
     // The ring likely treats 'Set Time' (Local) as its internal reference.
@@ -212,7 +217,7 @@ class PacketFactory {
     // Gadgetbridge sends exactly 5 bytes (Cmd 0x15 + 4 bytes Timestamp).
     // Previous code sent 14 bytes of payload (Cmd + 4 bytes TS + 10 bytes Zeros).
     // The ring might reject the extra length or interpret zeros as data.
-    // We send only the 4 bytes of timestamp.
+    // We send only the 4 bytes of timestamp data (createPacket handles framing).
 
     ByteData byteData = ByteData(4);
     byteData.setUint32(0, timestamp, Endian.little);
@@ -239,22 +244,19 @@ class PacketFactory {
   /// This likely sets the User ID or Authorization Token.
   static Uint8List createBindActionPacket() {
     return Uint8List.fromList([
-      0x48,
+      0x48, // Command: Bind
+      0x00, // Sub-command?
+      0x01, // Key?
+      0xC8, // 200?
+      0x00, 0x00, 0x00, 0x00, // Empty/ID?
+      0x32, // 50
+      0xF6, // 246
       0x00,
       0x01,
-      0xC8,
+      0x2D, // 45
       0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x32,
-      0xF6,
-      0x00,
-      0x01,
-      0x2D,
-      0x00,
-      0x19,
-      0x80
+      0x19, // 25
+      0x80 // Magic / Checksum?
     ]);
     // Note: We bypass createPacket here to ensure EXACT byte matching including checksum/tail if the ring expects this specific blob.
     // However, if checksum is needed, createPacket does it.
@@ -277,6 +279,7 @@ class PacketFactory {
   static const int cmdPreferences = 0x0A;
 
   /// Creates packet to set time (0x01 YY MM DD HH MM SS) - BCD Encoded!
+  /// The ring requires Binary Coded Decimal format for time components.
   static Uint8List createSetTimePacket() {
     final now = DateTime.now();
     int toBcd(int val) => ((val ~/ 10) << 4) | (val % 10);
@@ -378,6 +381,8 @@ class PacketFactory {
     // Gadgetbridge: BC <Type> 01 00 FF 00 FF
     // We confirmed 7-byte raw failed (Silence), 16-byte worked (Response).
     // The key 0x01 seems to be "Fetch All", not an offset.
+    // 0xBC = Big Data Command
+    // subCmdSyncSpo2 = Data Type (SpO2)
     return createPacket(
         command: cmdSyncSpo2HistoryNew,
         data: [subCmdSyncSpo2, 0x01, 0x00, 0xFF, 0x00, 0xFF]);

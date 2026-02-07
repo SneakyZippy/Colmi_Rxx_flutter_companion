@@ -36,7 +36,8 @@ class BleDataProcessor {
 
   BleDataProcessor(this.callbacks);
 
-  // Big Data State
+  // Big Data State (Received in chunks, needs reassembly)
+  // 0xBC (Big Data) packets are often split into multiple BLE notifications.
   List<int> _bigDataBuffer = [];
   int _bigDataExpectedLen = 0;
   bool _isReceivingBigData = false;
@@ -57,29 +58,33 @@ class BleDataProcessor {
     if (data.isEmpty) return;
 
     // --- BIG DATA REASSEMBLY ---
+    // If we are in the middle of receiving a large packet, append data to buffer.
     if (_isReceivingBigData) {
       _bigDataBuffer.addAll(data);
       callbacks.onProtocolLog(
           "Buffering Big Data... ${_bigDataBuffer.length}/$_bigDataExpectedLen");
 
+      // Check if we have received the full payload
       if (_bigDataBuffer.length >= _bigDataExpectedLen) {
         List<int> fullPacket = List.from(_bigDataBuffer);
         _isReceivingBigData = false;
         _bigDataBuffer.clear();
         _bigDataExpectedLen = 0;
-        await processData(fullPacket); // Recursive process
+        await processData(fullPacket); // Recursive process on the full packet
       }
       return;
     }
 
+    // Start of Big Data Packet (0xBC)
+    // Check if the packet length indicator implies more data is coming than what's in this current BLE frame.
     if (data[0] == BleConstants.cmdBigData && data.length >= 4) {
       int lenL = data[2];
       int lenH = data[3];
       int payloadLen = lenL | (lenH << 8);
-      int totalExpected = payloadLen + 6;
+      int totalExpected = payloadLen + 6; // Header overhead
 
       if (data.length < totalExpected) {
-        // Start buffering
+        // Start buffering if current data is partial
         callbacks.onProtocolLog(
             "Start Buffering Big Data (0xBC): Need $totalExpected bytes");
         _isReceivingBigData = true;
@@ -87,7 +92,7 @@ class BleDataProcessor {
         _bigDataBuffer = List.from(data);
         return;
       }
-      // Else we have full packet, continue below
+      // Else we have full packet immediately, continue processing below
     }
 
     // --- PARSING ---
@@ -139,6 +144,7 @@ class BleDataProcessor {
         break;
 
       case BleConstants.cmdGetBattery: // 0x03
+        // Battery level is usually the second byte
         if (data.length > 1) callbacks.onBattery(data[1]);
         break;
 
@@ -176,6 +182,7 @@ class BleDataProcessor {
 
   void _handleRawData(List<int> data) {
     // 0xA1 <Type> ...
+    // Raw sensor streams (PPG, Accel) often come with 0xA1 header.
     int subType = data[1];
     if (subType == 0x03) {
       callbacks.onRawAccel(data);
@@ -274,7 +281,7 @@ class BleDataProcessor {
   void _emitHrPoint(int val) {
     if (_hrLogBaseTime == 0) return;
     int sec = _hrLogBaseTime + (_hrLogCount * _hrLogInterval * 60);
-    // The device sends the timestamp as if it were UTC, but it represents Local Time components.
+    // The device sends the timestamp as if it were UTC, but it actually represents Local Time components.
     // Example: 00:00 Device Time -> Sent as 00:00 UTC Timestamp.
     // If we just use fromMillisecondsSinceEpoch, it converts 00:00 UTC -> 01:00 Local (if +1).
     // So we first parse as UTC to get the "face value" components, then create a Local DateTime from them.
@@ -355,10 +362,11 @@ class BleDataProcessor {
     int sub = data[1];
 
     if (sub == BleConstants.subSpo2BigData) {
-      // 0x2A
+      // 0x2A - SpO2 History BigData
+      // Structure: BC 2A ... [Header?] ... [DaysAgo] [Data...]
       _lastBigDataType = sub;
       spo2DataReceived = true;
-      // Index 6 start
+      // Index 6 start is an assumption based on header size
       int index = 6;
       while (index < data.length) {
         if (index >= data.length) break;
@@ -370,7 +378,8 @@ class BleDataProcessor {
         index++;
 
         DateTime syncingDay = DateTime.now().subtract(Duration(days: daysAgo));
-        // Iterate 24h (48 bytes)
+        // Iterate 24h (48 bytes) -> 2 bytes per hour? Or per reading?
+        // Actually typical format is Min byte, Max byte per hour.
         for (int h = 0; h < 24; h++) {
           if (index + 1 >= data.length) break;
           int minV = data[index++];
