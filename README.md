@@ -1,76 +1,79 @@
 Colmi R12 Smart Ring Companion
 
-This is an unofficial, open-source companion app for the Colmi R12 Smart Ring (and other rings using the "Yawell" protocol like the R02 and R10).
+An unofficial, open-source alternative for the Colmi R12 and compatible Yawell protocol devices (R02, R10, etc.).
 
-The official apps can be a bit bloated, so I built this with Flutter to be a lightweight alternative that focuses on data privacy and raw protocol access.
-✨ What it does
+Official apps are often bloated and privacy-invasive. This companion is built with Flutter to be lean, transparent, and focused on giving you access to your own data.
+✨ Features
 
-    Easy Pairing: Scans specifically for R12/R02/Rxx rings so you aren't digging through a list of your neighbor's TVs.
+    🎯 Targeted Pairing: Filters for R12/R02/Rxx devices so you don't have to scroll through your "smart" thingies.
 
-    Live Stats: Real-time tracking for Heart Rate, SpO2, HRV, and Stress.
+    📊 Live Stats: Real-time monitoring for Heart Rate, SpO2​, HRV, and Stress.
 
-    Data Sync: Pulls your historical logs (Sleep, Steps, HR) directly from the ring's flash memory.
+    💾 Data Sync: Pulls historical logs (Sleep, Steps, HR) directly from the ring's flash memory.
 
-    Dev Tools: Includes a built-in HEX console. If you're into reverse-engineering, you can watch the raw packets move in real-time.
+    🛠️ Dev Mode: Includes a built-in HEX console to watch raw packets move in real-time—perfect for reverse-engineering.
 
-    Cross-Platform: Built for Android, and compatible with iOS.
+    📱 Cross-Platform: High-performance UI running on Android and (hopefully) iOS.
 
-📥 Quick Start (APK)
 
-If you just want to try it out without building from source:
-👉 Download the latest APK from pCloud
-📸 App Preview
-Dashboard	Settings	History
-<img src="screenshots/Dashboard.png" width="300" />	<img src="screenshots/Settings.png" width="300" />	<img src="screenshots/HistoryHR.png" width="300" />
-🛠 Tech Stuff
+## 📸 App Preview
+
+| Dashboard | Settings | History |
+| :---: | :---: | :---: |
+| <img src="screenshots/Dashboard.png" width="250" /> | <img src="screenshots/Settings.png" width="250" /> | <img src="screenshots/HistoryHR.png" width="250" /> |
+
+
+🛠️ Tech Stack
 
     Framework: Flutter / Dart
 
     Bluetooth: flutter_blue_plus
 
-    State: Provider
+    State Management: Provider
 
     Protocol: Custom implementation of the Yawell UART protocol (BlueX chipset).
 
-🚀 Setting up the Dev Environment
-Prerequisites
+🚀 Getting Started
+📦 Quick Start (Binary)
 
-    Flutter SDK (3.0+)
+Don't want to build from source? Grab the latest build here:
+[Download from pCloud](https://e.pcloud.link/publink/show?code=kZ8P9aZgbt0ntiX9U76pWP4QRJwIbJkGHfX) 
 
-    A physical device (Bluetooth won't work on an emulator!)
+💻 Dev Setup
 
-Build Instructions
+Prerequisites: Flutter SDK (3.0+) and a physical device (Bluetooth functionality is not available on emulators).
 
-    Clone & Enter:
+    Clone the repo:
     Bash
 
     git clone https://github.com/SneakyZippy/colmi_r12_flutter_companion.git
     cd colmi_r12_flutter_companion
 
-    Get Packages:
+    Fetch dependencies:
     Bash
 
     flutter pub get
 
-    Run it:
+    Launch:
     Bash
 
     flutter run
 
-⚠️ Notes on Permissions
+⚠️ Requirements & Permissions
 
-    Android: Needs Android 12+. Make sure BLUETOOTH_SCAN and BLUETOOTH_CONNECT are in your manifest. You also need Location Services ON for Bluetooth scanning to actually find devices.
+    [!IMPORTANT]
+    Android: Requires Android 12+. Ensure BLUETOOTH_SCAN and BLUETOOTH_CONNECT are in your manifest. Location Services must be toggled ON for scanning to work.
 
-    iOS: Ensure your Info.plist has the NSBluetoothAlwaysUsageDescription key.
+    iOS: Ensure Info.plist includes the NSBluetoothAlwaysUsageDescription key.
 
-🤝 Credits & Acknowledgements
+🤝 Credits
 
-This wouldn't exist without the community's work on reverse-engineering these rings:
+This project stands on the shoulders of giants in the reverse-engineering community:
 
-    tahnok/colmi_r02_client - Essential docs on packet structure and checksums.
+    tahnok/colmi_r02_client - The blueprint for packet structure.
 
-    CitizenOneX/colmi_r06_fbp - Helped with Dart stream handling.
+    CitizenOneX/colmi_r06_fbp - Insights into Dart stream handling.
 
-    Gadgetbridge - The GOAT for command references.
+    Gadgetbridge - The ultimate reference for BLE command sets.
 
-Disclaimer: This is a hobby project. It’s not affiliated with Colmi or Yawell. Use it at your own risk, and don't rely on it for medical decisions!
+Disclaimer: This is a hobby project and is not affiliated with Colmi or Yawell. Use at your own risk. This is not a medical device.
