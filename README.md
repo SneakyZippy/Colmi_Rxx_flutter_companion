@@ -1,85 +1,76 @@
-# Colmi R12 Smart Ring Companion (Flutter)
+Colmi R12 Smart Ring Companion
 
-An open-source, unofficial companion application for the **Colmi R12 Smart Ring** (and compatible "Yawell" protocol devices like R02, R10). Built with **Flutter** and **flutter_blue_plus**.
+This is an unofficial, open-source companion app for the Colmi R12 Smart Ring (and other rings using the "Yawell" protocol like the R02 and R10).
 
-## 🚀 Features
+The official apps can be a bit bloated, so I built this with Flutter to be a lightweight alternative that focuses on data privacy and raw protocol access.
+✨ What it does
 
-*   **Device Scanning:** Filters specifically for R12/R02/Rxx/Ring devices.
-*   **Live Monitoring:** Real-time Heart Rate, SpO2, HRV and Stress monitoring.
-*   **Data Sync:** Granular synchronization of historic logs (Sleep, Steps, HR, HRV Stress) from the ring's flash memory.
-*   **Protocol Debugging:** Built-in console to view raw HEX packets for reverse-engineering.
-*   **Cross-Platform:** Runs on **Android** and (should) run on **iOS**.
+    Easy Pairing: Scans specifically for R12/R02/Rxx rings so you aren't digging through a list of your neighbor's TVs.
 
-## 📥 Downloads
+    Live Stats: Real-time tracking for Heart Rate, SpO2, HRV, and Stress.
 
-Get the latest APK here:
-[Download from pCloud](https://e.pcloud.link/publink/show?code=kZ8P9aZgbt0ntiX9U76pWP4QRJwIbJkGHfX)
+    Data Sync: Pulls your historical logs (Sleep, Steps, HR) directly from the ring's flash memory.
 
-## 📸 Screenshots
+    Dev Tools: Includes a built-in HEX console. If you're into reverse-engineering, you can watch the raw packets move in real-time.
 
-| Dashboard | Settings | History |
-| Dashboard | Settings | History |
-| :---: | :---: | :---: |
-| <img src="screenshots/Dashboard.png" width="300" /> | <img src="screenshots/Settings.png" width="300" /> | <img src="screenshots/HistoryHR.png" width="300" /> |
+    Cross-Platform: Built for Android, and compatible with iOS.
 
+📥 Quick Start (APK)
 
-## 🛠️ Tech Stack
+If you just want to try it out without building from source:
+👉 Download the latest APK from pCloud
+📸 App Preview
+Dashboard	Settings	History
+<img src="screenshots/Dashboard.png" width="300" />	<img src="screenshots/Settings.png" width="300" />	<img src="screenshots/HistoryHR.png" width="300" />
+🛠 Tech Stuff
 
-* **Framework:** Flutter (Dart)
-* **Bluetooth:** [`flutter_blue_plus`](https://pub.dev/packages/flutter_blue_plus)
-* **State Management:** Provider
-* **Protocol:** Custom implementation of the "Yawell" UART protocol (BlueX chipset).
+    Framework: Flutter / Dart
 
-## 📦 Getting Started
+    Bluetooth: flutter_blue_plus
 
-### Prerequisites
-* Flutter SDK (3.0+)
-* Android Studio / VS Code
-* Physical Device (Simulators cannot use Bluetooth)
+    State: Provider
 
-### Installation
+    Protocol: Custom implementation of the Yawell UART protocol (BlueX chipset).
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/SneakyZippy/colmi_r12_flutter_companion.git](https://github.com/SneakyZippy/colmi_r12_flutter_companion.git)
+🚀 Setting up the Dev Environment
+Prerequisites
+
+    Flutter SDK (3.0+)
+
+    A physical device (Bluetooth won't work on an emulator!)
+
+Build Instructions
+
+    Clone & Enter:
+    Bash
+
+    git clone https://github.com/SneakyZippy/colmi_r12_flutter_companion.git
     cd colmi_r12_flutter_companion
-    ```
 
-2.  **Install dependencies:**
-    ```bash
+    Get Packages:
+    Bash
+
     flutter pub get
-    ```
 
-3.  **Run the app:**
-    ```bash
+    Run it:
+    Bash
+
     flutter run
-    ```
 
-## ⚠️ Important Configuration
+⚠️ Notes on Permissions
 
-### Android
-This app uses permissions requiring Android 12+ configuration.
-* Ensure your `AndroidManifest.xml` includes `BLUETOOTH_SCAN` (neverForLocation) and `BLUETOOTH_CONNECT`.
-* Location services must be enabled on the phone for scanning to work.
+    Android: Needs Android 12+. Make sure BLUETOOTH_SCAN and BLUETOOTH_CONNECT are in your manifest. You also need Location Services ON for Bluetooth scanning to actually find devices.
 
-### iOS
-* Ensure `Info.plist` contains `NSBluetoothAlwaysUsageDescription`.
+    iOS: Ensure your Info.plist has the NSBluetoothAlwaysUsageDescription key.
 
-## 📚 Protocol & Acknowledgements
+🤝 Credits & Acknowledgements
 
-This project is a clean-room implementation based on the reverse-engineering work of the open-source community. Special thanks to:
+This wouldn't exist without the community's work on reverse-engineering these rings:
 
-* **[tahnok/colmi_r02_client](https://github.com/tahnok/colmi_r02_client):** For the Python documentation of the packet structure and checksum logic.
-* **[CitizenOneX/colmi_r06_fbp](https://github.com/CitizenOneX/colmi_r06_fbp):** For insights into Dart stream handling for this chipset.
-* **Gadgetbridge:** For valid command references.
+    tahnok/colmi_r02_client - Essential docs on packet structure and checksums.
 
-## 🤝 Contributing
+    CitizenOneX/colmi_r06_fbp - Helped with Dart stream handling.
 
-Contributions are welcome! If you find a new Command ID, please open an Issue or PR with the hex code.
+    Gadgetbridge - The GOAT for command references.
 
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
-
----
-**Disclaimer:** This software is unofficial and not affiliated with Colmi or Yawell. Use at your own risk.
+Disclaimer: This is a hobby project. It’s not affiliated with Colmi or Yawell. Use it at your own risk, and don't rely on it for medical decisions!
