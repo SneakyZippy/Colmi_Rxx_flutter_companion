@@ -1,3 +1,9 @@
+a better userexperience in the Ringularity app
+
+https://github.com/d4xika/Ringularity
+
+
+
 Colmi R12 Smart Ring Companion
 
 An unofficial, open-source alternative for the Colmi R12 and compatible Yawell protocol devices (R02, R10, etc.).
